@@ -30,6 +30,12 @@ func gsKantoStoryTalk(m *emu.Emu, romData []byte, profile *gsprofile.Profile,
 				return fmt.Errorf("gen2 %s: settle previous script: %w", label, err)
 			}
 		}
+		// If a late Kanto objective resumes in Johto, use the real
+		// PASS-powered Magnet Train instead of routing through an
+		// unowned cross-region station warp.
+		if err := gsKantoRestoreRegion(m, romData, profile); err != nil {
+			return fmt.Errorf("gen2 %s: restore Kanto region: %w", label, err)
+		}
 		if err := gsSecondBadgeFaceFrom(m, romData, profile,
 			skill.ExactNativeDestination(mapID, sx, sy), tx, ty, label); err != nil {
 			return fmt.Errorf("gen2 %s: reach interaction: %w", label, err)
@@ -135,6 +141,9 @@ func executeGSKantoMistyDate(m *emu.Emu, romData []byte) error {
 	mapID, err := gsOpeningMapID("ROUTE_25")
 	if err != nil {
 		return err
+	}
+	if err := gsKantoRestoreRegion(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Misty: resume in Kanto: %w", err)
 	}
 	complete := func() bool { return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressKantoMistyReturned) }
 	for _, y := range []uint8{6, 7} {

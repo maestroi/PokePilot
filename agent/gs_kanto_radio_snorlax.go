@@ -156,6 +156,9 @@ func executeGSKantoSnorlax(m *emu.Emu, romData []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := gsKantoRestoreRegion(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Snorlax: resume in Kanto: %w", err)
+	}
 	if !profile.DecodeOverworld(m).Controllable {
 		return fmt.Errorf("%w: Snorlax requires a controllable Kanto overworld",
 			errGSSecondBadgeUnexpectedState)

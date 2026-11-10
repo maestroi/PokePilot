@@ -102,6 +102,9 @@ const (
 	ProgressKantoRocketAtGym        game.ProgressID = "gs_kanto_cerulean_rocket_encountered"
 	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
 	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
+	ProgressKantoCopycatMet         game.ProgressID = "gs_kanto_copycat_lost_item_quest"
+	ProgressKantoLostDollReceived   game.ProgressID = "gs_kanto_lost_doll_received"
+	ProgressKantoRailPassReceived   game.ProgressID = "gs_kanto_rail_pass_received"
 	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
 	ProgressRadioCardReceived       game.ProgressID = "gs_radio_card_received"
 	ProgressKantoExpansionCard      game.ProgressID = "gs_kanto_expansion_card"
@@ -187,10 +190,16 @@ const (
 	eventKantoMetPowerManager     uint16 = 202
 	eventKantoMetRocketAtGym      uint16 = 203
 	eventKantoPowerRestored       uint16 = 205
-	eventKantoFoundMachinePart    uint16 = 251
-	eventKantoTrainersAtGym       uint16 = 1903
-	eventKantoBlueAtCinnabar      uint16 = 1909
-	eventKantoBlueAtViridian      uint16 = 1910
+	// pret/pokegold Copycat and Vermilion Fan Club scripts. The Doll is
+	// consumed on return; its *receipt event* remains durable afterward.
+	eventKantoCopycatMet       uint16 = 207
+	eventKantoDollReturned     uint16 = 208
+	eventKantoRailPassReceived uint16 = 209
+	eventKantoLostDollReceived uint16 = 210
+	eventKantoFoundMachinePart uint16 = 251
+	eventKantoTrainersAtGym    uint16 = 1903
+	eventKantoBlueAtCinnabar   uint16 = 1909
+	eventKantoBlueAtViridian   uint16 = 1910
 	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
 	// after a retail battle win; it is cleared by the next Hall ceremony.
 	eventMtSilverOpened         uint16 = 1871
@@ -359,6 +368,11 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressKantoRocketAtGym, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym)},
 		{ID: ProgressKantoMachinePartFound, Complete: hasGSEvent(reader, eventKantoFoundMachinePart)},
 		{ID: ProgressKantoPowerRestored, Complete: hasGSEvent(reader, eventKantoReturnedMachinePart) && hasGSEvent(reader, eventKantoPowerRestored)},
+		{ID: ProgressKantoCopycatMet, Complete: hasGSEvent(reader, eventKantoCopycatMet)},
+		{ID: ProgressKantoLostDollReceived, Complete: hasGSEvent(reader, eventKantoLostDollReceived)},
+		// A visit or gift dialogue never proves the rail Pass. Both the
+		// retail event and real key-item pocket entry must agree.
+		{ID: ProgressKantoRailPassReceived, Complete: hasGSEvent(reader, eventKantoRailPassReceived) && gsOwnsKeyItem(reader, gsRailPass)},
 		// The Route 25 script removes Misty from her date and clears the
 		// Cerulean Gym sprite visibility event; power restoration alone
 		// must not manufacture her return.
