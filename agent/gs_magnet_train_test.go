@@ -11,8 +11,8 @@ import (
 func TestGSMagnetTrainStationSpecsAreNativeAndDirectional(t *testing.T) {
 	for _, tc := range []struct {
 		destination game.RegionID
-		from, to string
-		source game.RegionID
+		from, to    string
+		source      game.RegionID
 	}{
 		{game.RegionKanto, "GOLDENROD_MAGNET_TRAIN_STATION", "SAFFRON_MAGNET_TRAIN_STATION", game.RegionJohto},
 		{game.RegionJohto, "SAFFRON_MAGNET_TRAIN_STATION", "GOLDENROD_MAGNET_TRAIN_STATION", game.RegionKanto},
