@@ -114,6 +114,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressKantoRocketAtGym,
 		gsprofile.ProgressKantoMachinePartFound,
 		gsprofile.ProgressKantoPowerRestored,
+		gsprofile.ProgressKantoCopycatMet,
+		gsprofile.ProgressKantoLostDollReceived,
+		gsprofile.ProgressKantoRailPassReceived,
 		gsprofile.ProgressKantoMistyReturned,
 		gsprofile.ProgressKantoBlueInvited,
 		gsprofile.ProgressRadioCardReceived,
@@ -353,6 +356,12 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSKantoMachinePart(a.m, a.romData)
 		case gsprofile.ProgressKantoPowerRestored:
 			err = executeGSKantoRestorePower(a.m, a.romData)
+		case gsprofile.ProgressKantoCopycatMet:
+			err = executeGSKantoMeetCopycat(a.m, a.romData)
+		case gsprofile.ProgressKantoLostDollReceived:
+			err = executeGSKantoReceiveLostDoll(a.m, a.romData)
+		case gsprofile.ProgressKantoRailPassReceived:
+			err = executeGSKantoReceiveRailPass(a.m, a.romData)
 		case gsprofile.ProgressKantoMistyReturned:
 			err = executeGSKantoMistyDate(a.m, a.romData)
 		case gsprofile.ProgressKantoBlueInvited:
@@ -448,6 +457,9 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressKantoRocketAtGym,
 			gsprofile.ProgressKantoMachinePartFound,
 			gsprofile.ProgressKantoPowerRestored,
+			gsprofile.ProgressKantoCopycatMet,
+			gsprofile.ProgressKantoLostDollReceived,
+			gsprofile.ProgressKantoRailPassReceived,
 			gsprofile.ProgressKantoMistyReturned,
 			gsprofile.ProgressKantoBlueInvited,
 			gsprofile.ProgressRadioCardReceived,
