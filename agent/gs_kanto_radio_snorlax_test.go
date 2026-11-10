@@ -91,7 +91,7 @@ func TestGSKantoBoulderOfferChecksBothRadioCardsAndSnorlaxFirst(t *testing.T) {
 		gsprofile.ProgressKantoSnorlaxCleared,
 		gsprofile.ProgressKantoBoulderBadgeEarned,
 	} {
-		offered := adapter.ProgressionObjectives(obs)
+		offered := gsKantoGymObjectives(obs)
 		if len(offered) != 1 || offered[0].Progress != want {
 			t.Fatalf("Brock approach offered %+v, want %s", offered, want)
 		}
