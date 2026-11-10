@@ -182,6 +182,23 @@ func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMe
 			return 0, false
 		}
 		return pokedexOffset, true
+	case game.StartMenuPokegear:
+		// The menu is ordered Pokédex?, Pokémon?, PACK?, Pokégear,
+		// Trainer Card, Save, Option, Exit. Both the real obtained bit
+		// and rendered GEAR label are necessary: stale cursor RAM alone
+		// is not a visible Pokégear entry.
+		text := gsScreenText(reader)
+		if reader.Peek8(sym.PokegearFlags)&(1<<7) == 0 || !strings.Contains(text, "GEAR") {
+			return 0, false
+		}
+		index := pokedexOffset
+		if partyPresent {
+			index++
+		}
+		if strings.Contains(text, "PACK") {
+			index++
+		}
+		return index, true
 	case game.StartMenuItems:
 		// Bug Contest/link variants can omit PACK. Only advertise it when the
 		// currently rendered START menu positively contains the entry.

@@ -57,6 +57,7 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				gsprofile.ProgressHM01CutAcquired,
 				gsprofile.ProgressTM02HeadbuttAcquired,
 				gsprofile.ProgressPlainBadgeEarned,
+				gsprofile.ProgressRadioCardReceived,
 				gsprofile.ProgressSquirtBottleAcquired,
 				gsprofile.ProgressSudowoodoCleared,
 				gsprofile.ProgressTM08RockSmashAcquired,
