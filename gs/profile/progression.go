@@ -196,10 +196,10 @@ const (
 	eventKantoDollReturned     uint16 = 208
 	eventKantoRailPassReceived uint16 = 209
 	eventKantoLostDollReceived uint16 = 210
-	eventKantoFoundMachinePart    uint16 = 251
-	eventKantoTrainersAtGym       uint16 = 1903
-	eventKantoBlueAtCinnabar      uint16 = 1909
-	eventKantoBlueAtViridian      uint16 = 1910
+	eventKantoFoundMachinePart uint16 = 251
+	eventKantoTrainersAtGym    uint16 = 1903
+	eventKantoBlueAtCinnabar   uint16 = 1909
+	eventKantoBlueAtViridian   uint16 = 1910
 	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
 	// after a retail battle win; it is cleared by the next Hall ceremony.
 	eventMtSilverOpened         uint16 = 1871
