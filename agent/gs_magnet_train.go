@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	gsTrainBoardBudget    uint64 = 30_000
-	gsTrainMaxPresses           = 120
-	gsTrainTalkAttempts         = 3
+	gsTrainBoardBudget  uint64 = 30_000
+	gsTrainMaxPresses          = 120
+	gsTrainTalkAttempts        = 3
 )
 
 // gsTrainStation holds the exact pret/pokegold station/object identities.
