@@ -52,6 +52,10 @@ var gsKantoGymOwnedMaps = []string{
 	"ROUTE_12", "ROUTE_12_SUPER_ROD_HOUSE",
 	"ROUTE_8", "ROUTE_8_SAFFRON_GATE",
 	"LAVENDER_TOWN", "LAVENDER_POKECENTER_1F", "LAV_RADIO_TOWER_1F",
+	// Copycat's PASS chain visits Saffron and the Vermilion Fan Club.
+	"COPYCATS_HOUSE_1F", "COPYCATS_HOUSE_2F", "POKEMON_FAN_CLUB",
+	// The daily rail connection is script-owned, never a static warp.
+	"GOLDENROD_MAGNET_TRAIN_STATION", "SAFFRON_MAGNET_TRAIN_STATION",
 	"ROUTE_5", "ROUTE_5_SAFFRON_GATE", "ROUTE_5_UNDERGROUND_PATH_ENTRANCE",
 	"CERULEAN_CITY", "CERULEAN_GYM", "CERULEAN_POKECENTER_1F",
 	"ROUTE_24", "ROUTE_25", "ROUTE_4",
@@ -96,6 +100,9 @@ func gsKantoGymObjectives(obs Observation) []Objective {
 				{gsprofile.ProgressKantoRocketAtGym, "(experimental Kanto: enter Cerulean Gym and trigger the Rocket thief scene)"},
 				{gsprofile.ProgressKantoMachinePartFound, "(experimental Kanto: recover the hidden Machine Part in Cerulean Gym)"},
 				{gsprofile.ProgressKantoPowerRestored, "(experimental Kanto: return the Machine Part and restore power to the region)"},
+				{gsprofile.ProgressKantoCopycatMet, "(experimental Kanto: ask Copycat in Saffron about her missing Poké Doll)"},
+				{gsprofile.ProgressKantoLostDollReceived, "(experimental Kanto: recover Copycat's Poké Doll from the Vermilion Fan Club)"},
+				{gsprofile.ProgressKantoRailPassReceived, "(experimental Kanto: return the Doll and claim Copycat's real Magnet Train PASS)"},
 				{gsprofile.ProgressKantoMistyReturned, "(experimental Kanto: interrupt Misty's date on Route 25 so she returns to Cerulean Gym)"},
 			} {
 				if !obs.Story.Has(prereq.id) {
@@ -154,9 +161,18 @@ func executeGSKantoGym(m *emu.Emu, romData []byte, id game.ProgressID) error {
 	if err != nil || done {
 		return err
 	}
-	// A historical first ship trip does not by itself prove the player is
-	// presently in Kanto. Backtracking to Johto requires a separate transport
-	// controller; fail closed rather than pathing through a fictitious ferry.
+	// A historical first ship trip is not proof the player is presently in
+	// Kanto. Settle any owned local script first; if a late-run checkpoint
+	// resumed in Johto, the actual PASS-checked Magnet Train restores Kanto.
+	// Missing PASS, a blocked departure, or an unknown region fails closed.
+	if !profile.DecodeOverworld(m).Controllable {
+		if err := driveGSSecondBadgeInterruption(m, profile, label); err != nil {
+			return fmt.Errorf("gen2 %s: resume Gym script: %w", spec.leader, err)
+		}
+	}
+	if err := gsKantoRestoreRegion(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 %s: Kanto return: %w", spec.leader, err)
+	}
 	obs, err := profile.DecodeObservation(m, romData)
 	if err != nil {
 		return fmt.Errorf("gen2 %s: decode region: %w", spec.leader, err)
@@ -164,11 +180,6 @@ func executeGSKantoGym(m *emu.Emu, romData []byte, id game.ProgressID) error {
 	if obs.Region != game.RegionKanto {
 		return fmt.Errorf("%w: %s needs a live Kanto location, got %s on map %#04x",
 			errGSSecondBadgeUnexpectedState, spec.leader, obs.Region, obs.NativeMapID)
-	}
-	if !profile.DecodeOverworld(m).Controllable {
-		if err := driveGSSecondBadgeInterruption(m, profile, label); err != nil {
-			return fmt.Errorf("gen2 %s: resume Gym script: %w", spec.leader, err)
-		}
 	}
 	gym, err := gsOpeningMapID(spec.gym)
 	if err != nil {
