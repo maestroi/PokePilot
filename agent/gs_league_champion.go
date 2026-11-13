@@ -143,11 +143,8 @@ func executeGSLeagueChampion(m *emu.Emu, romData []byte, goal game.ProgressID) e
 		return fmt.Errorf("%w: Champion Lance requires Karen's post-battle flag", errGSSecondBadgeUnexpectedState)
 	}
 	here := profile.DecodeOverworld(m).NativeMapID
-	if gsLeagueApproachMap(here) {
-		return gsLeagueResetAttempt(m, romData, profile, "league:champion-lance")
-	}
 	if here != karen && here != lance {
-		return fmt.Errorf("%w: Champion must start in Karen or Lance room, map %#04x", errGSSecondBadgeUnexpectedState, here)
+		return gsLeagueResetAttempt(m, romData, profile, "league:champion-lance")
 	}
 	// Prepare using only real finite Gen2 field items, never a free Center.
 	// If the scripted approach already owns the emulator, resume it without

@@ -63,7 +63,27 @@ var errGSLeagueAttemptReset = errors.New("gen2 League attempt was reset")
 // Center, whose MAPCALLBACK_NEWMAP clears all of them. Heal there, prove the
 // reset happened, and hand the replan a typed outcome instead of resuming a
 // room that cannot be reached.
+//
+// A resume elsewhere (a planner detour with the flags still set) first flies
+// to the Indigo landing from Blackthorn's outdoor map, as the plateau approach
+// does; Fly only shortens the trip, so without it the owned route walks.
 func gsLeagueResetAttempt(m *emu.Emu, romData []byte, profile *gsprofile.Profile, label string) error {
+	if !gsLeagueApproachMap(profile.DecodeOverworld(m).NativeMapID) {
+		blackthorn, err := gsOpeningMapID("BLACKTHORN_CITY")
+		if err != nil {
+			return err
+		}
+		route23, err := gsOpeningMapID("ROUTE_23")
+		if err != nil {
+			return err
+		}
+		if err := gsSecondBadgeGoTo(m, romData, profile, skill.NativeMapDestination(blackthorn)); err != nil {
+			return fmt.Errorf("gen2 %s: reach Blackthorn before flying to Indigo Plateau: %w", label, err)
+		}
+		if err := skill.UseNativeFly(m, route23); err != nil && !errors.Is(err, skill.ErrFieldMovePrerequisite) {
+			return fmt.Errorf("gen2 %s: fly to Indigo Plateau: %w", label, err)
+		}
+	}
 	if err := gsCoastalHeal(m, romData, profile, "INDIGO_PLATEAU_POKECENTER_1F"); err != nil {
 		return fmt.Errorf("gen2 %s: return to Indigo Plateau after a League whiteout: %w", label, err)
 	}
@@ -108,13 +128,11 @@ func executeGSLeagueMember(m *emu.Emu, romData []byte, progress game.ProgressID)
 	if err != nil {
 		return err
 	}
-	start := profile.DecodeOverworld(m)
-	if gsLeagueApproachMap(start.NativeMapID) {
+	// The League rooms lock behind the player and the only way back in is the
+	// Indigo Center, which clears every victory flag. Any resume outside the
+	// two owned rooms (a whiteout spawn or a planner detour) is a lost attempt.
+	if here := profile.DecodeOverworld(m).NativeMapID; here != prevID && here != roomID {
 		return gsLeagueResetAttempt(m, romData, profile, spec.encounter)
-	}
-	if start.NativeMapID != prevID && start.NativeMapID != roomID {
-		return fmt.Errorf("%w: %s must resume in %s or %s, observed map %#04x",
-			errGSSecondBadgeUnexpectedState, spec.encounter, spec.previousRoom, spec.room, start.NativeMapID)
 	}
 	complete := func() bool {
 		return gsFirstBadgeProgressComplete(profile, m, spec.progress)
