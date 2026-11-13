@@ -141,6 +141,7 @@ var redOwnedStoryPolicyExceptions = fileSet(
 	"cutscene.go",
 	"elite_four.go",
 	"elite_four_matchup.go",
+	"elite_four_rematch.go",
 	"elite_four_stages.go",
 	"errand.go",
 	"evolution_stone_shop.go",

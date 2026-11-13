@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -47,14 +48,28 @@ var (
 
 type leagueFact func(state.StoryFacts) bool
 
-func leagueFacts(mem *state.Mem) state.StoryFacts {
+// leagueRematches holds the emulators currently replaying the League after
+// the Hall of Fame (LeagueRematch). The stage controllers are shared with the
+// first campaign; only the facts they read differ, and threading a mode
+// through every room/battle helper would fork them all for one bit.
+var leagueRematches sync.Map // *emu.Emu -> struct{}
+
+func leagueRematchActive(m *emu.Emu) bool {
+	_, ok := leagueRematches.Load(m)
+	return ok
+}
+
+func leagueFacts(m *emu.Emu, mem *state.Mem) state.StoryFacts {
+	if leagueRematchActive(m) {
+		return state.DecodeLeagueAttemptFacts(mem, state.DecodeInventory(mem))
+	}
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
 }
 
 func currentLeagueFacts(m *emu.Emu) state.StoryFacts {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return leagueFacts(&mem)
+	return leagueFacts(m, &mem)
 }
 
 func leagueMainStoryComplete(m *emu.Emu) bool {
@@ -122,11 +137,11 @@ func settleLeagueRoomEntry(m *emu.Emu, romData []byte, targetMap uint8, waitForB
 		if !loaded(mm) {
 			return false
 		}
-		if leagueFacts(mm).MainStoryComplete {
+		if leagueFacts(m, mm).MainStoryComplete {
 			return true
 		}
 		if waitForBattle {
-			return state.DecodeBattle(mm) != nil || leagueFacts(mm).LeagueChampionDefeated
+			return state.DecodeBattle(mm) != nil || leagueFacts(m, mm).LeagueChampionDefeated
 		}
 		return mm.U8(sym.CurrentMapScriptFlags)&curMapLoadedScriptPending == 0 && state.Controllable(mm)
 	})
@@ -136,11 +151,11 @@ func settleLeagueRoomEntry(m *emu.Emu, romData []byte, targetMap uint8, waitForB
 	if !loaded(&mem) {
 		return fmt.Errorf("skill: EliteFourProgression: map %#02x header did not load within %d frames", targetMap, leagueRoomSettleBudget)
 	}
-	if leagueFacts(&mem).MainStoryComplete {
+	if leagueFacts(m, &mem).MainStoryComplete {
 		return nil
 	}
 	if waitForBattle {
-		if state.DecodeBattle(&mem) == nil && !leagueFacts(&mem).LeagueChampionDefeated {
+		if state.DecodeBattle(&mem) == nil && !leagueFacts(m, &mem).LeagueChampionDefeated {
 			return fmt.Errorf("skill: EliteFourProgression: Champion battle did not start within %d frames", leagueRoomSettleBudget)
 		}
 		return nil
@@ -201,8 +216,8 @@ func leagueRoomScriptAddress(mapID uint8) (uint16, bool) {
 	}
 }
 
-func leagueMemberBoundaryReady(mem *state.Mem, roomScript uint16, done leagueFact) bool {
-	return done(leagueFacts(mem)) && mem.U8(roomScript) == 0 && state.Controllable(mem)
+func leagueMemberBoundaryReady(m *emu.Emu, mem *state.Mem, roomScript uint16, done leagueFact) bool {
+	return done(leagueFacts(m, mem)) && mem.U8(roomScript) == 0 && state.Controllable(mem)
 }
 
 func fightLeagueMember(
@@ -240,14 +255,14 @@ func fightLeagueMember(
 	// selected end-battle script still owns execution.
 	stable := 0
 	mem := advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-		if !leagueMemberBoundaryReady(mm, roomScript, done) {
+		if !leagueMemberBoundaryReady(m, mm, roomScript, done) {
 			stable = 0
 			return false
 		}
 		stable++
 		return stable >= settleStableFrames
 	})
-	facts := leagueFacts(&mem)
+	facts := leagueFacts(m, &mem)
 	if !done(facts) {
 		if trainerErr != nil {
 			return fmt.Errorf("skill: EliteFourProgression: %s trainer controller failed before the room-completion fact settled: %w", name, trainerErr)
@@ -337,6 +352,9 @@ func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error 
 // point leaves GoTo with world: no_route (Lance's Champion entrance is a
 // disconnected north pocket; Dig/Escape Rope are illegal on the HoF tileset).
 func finishHallOfFame(m *emu.Emu) error {
+	if leagueRematchActive(m) {
+		return finishRematchHallOfFame(m)
+	}
 	if !leagueMainStoryComplete(m) {
 		// HoFDisplayPlayerStats ends in PrintText's button wait without
 		// wFontLoaded set, so advanceUntil's text-box A never fires there. The
@@ -344,14 +362,14 @@ func finishHallOfFame(m *emu.Emu) error {
 		var mem state.Mem
 		for spent := 0; spent < leagueEndingBudget; spent += leagueEndingPressEvery {
 			state.Snapshot(m, &mem)
-			if leagueFacts(&mem).MainStoryComplete {
+			if leagueFacts(m, &mem).MainStoryComplete {
 				break
 			}
 			m.Tap(emu.A, 3, 7)
 			m.StepFrames(leagueEndingPressEvery - 10)
 		}
 		state.Snapshot(m, &mem)
-		facts := leagueFacts(&mem)
+		facts := leagueFacts(m, &mem)
 		if !facts.MainStoryComplete {
 			return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(sym.CurMap))
 		}
@@ -361,7 +379,7 @@ func finishHallOfFame(m *emu.Emu) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !leagueFacts(&mem).MainStoryComplete {
+	if !leagueFacts(m, &mem).MainStoryComplete {
 		return fmt.Errorf("skill: EliteFourProgression: main-story completion lost while leaving Hall of Fame")
 	}
 	if mem.U8(sym.CurMap) == hallOfFameMap {
