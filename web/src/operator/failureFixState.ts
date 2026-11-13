@@ -77,6 +77,6 @@ export function failureFixState(event: Record<string, unknown>, attempts: RunAtt
   if (problem) return fromProblem(problem)
   return {
     tone: 'muted', key: null, label: 'Not filed',
-    detail: 'No triage record, so the fixer never sees it. Usually an expected game outcome (a training retreat or blackout) the run recovered from; one that ends the run is filed.'
+    detail: 'No triage record, so the fixer never sees it. Runs from before blackouts and training retreats were filed, or the upload was lost.'
   }
 }
