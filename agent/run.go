@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -475,16 +476,15 @@ func noteObservation(k *Knowledge, obs Observation) {
 }
 
 func sameProgress(a, b Observation) bool {
-	if a.Map != b.Map || a.X != b.X || a.Y != b.Y || a.PartyCount != b.PartyCount {
+	if a.Map != b.Map || a.Location != b.Location || a.X != b.X || a.Y != b.Y || a.PartyCount != b.PartyCount {
 		return false
 	}
-	if len(a.Events) != len(b.Events) {
+	// Events is Red's legacy flag list; adapters without it report durable
+	// progress only through Story. Gen2 Elite Four rooms share one trainer
+	// stand and a zero legacy Map, so without Story/Location four distinct
+	// victories looked identical and the short watchdog stopped a healthy run.
+	if !slices.Equal(a.Events, b.Events) || !slices.Equal(a.Story, b.Story) {
 		return false
-	}
-	for i := range a.Events {
-		if a.Events[i] != b.Events[i] {
-			return false
-		}
 	}
 	// A taught TM/HM changes the party in place without moving the player.
 	// Counting a run of distinct move-teaching objectives (pre-boss prep)
