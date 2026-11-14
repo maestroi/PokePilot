@@ -236,12 +236,8 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	// lets A talk through the counter to the clerk one tile farther away.
 	// standardMartCounterTile is the same tile reachableStockMarts measured,
 	// so a mart offered here is one the travel can actually stand on.
-	dest := Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}
-	if _, err := TravelFlee(m, romData, dest, policy, inventoryRecoveryBattles); err != nil {
-		return softFail(fmt.Errorf("skill: EnsureItemStock: reach %s: %w", mart.name, err))
-	}
-	if err := Face(m, 1, 5); err != nil {
-		return softFail(fmt.Errorf("skill: EnsureItemStock: face %s counter: %w", mart.name, err))
+	if err := approachMartCounter(m, romData, mart, policy); err != nil {
+		return softFail(fmt.Errorf("skill: EnsureItemStock: %w", err))
 	}
 
 	state.Snapshot(m, &mem)
@@ -299,6 +295,34 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	return have, fmt.Errorf("skill: EnsureItemStock: item %#02x remains at %d, need at least %d", item, have, minimum)
 }
 
+// approachMartCounter stands the player at the standard counter tile facing
+// the counter, at a controllable boundary Buy/Sell can open the clerk from.
+// The turn toward the counter can itself raise an incidental overworld notice
+// ("REPEL's effect wore off." on the last Repel step, measured at the Indigo
+// lobby in run-3hyjhsbe997hyce0i2c0amcr); Face reports the facing but leaves
+// that box up. Page only ordinary text — never answer a choice — then re-face.
+func approachMartCounter(m *emu.Emu, romData []byte, mart standardMartRecoveryTarget, policy MovePolicy) error {
+	dest := Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}
+	if _, err := TravelFlee(m, romData, dest, policy, inventoryRecoveryBattles); err != nil {
+		return fmt.Errorf("reach %s: %w", mart.name, err)
+	}
+	if err := Face(m, 1, 5); err != nil {
+		return fmt.Errorf("face %s counter: %w", mart.name, err)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if state.Controllable(&mem) {
+		return nil
+	}
+	if rec := RecoverDialogue(m, dialogueRecoveryBudget); rec.Stop != DialogueRecovered {
+		return fmt.Errorf("clear notice at %s counter: recovery stopped with %d (%q)", mart.name, rec.Stop, rec.Text)
+	}
+	if err := Face(m, 1, 5); err != nil {
+		return fmt.Errorf("re-face %s counter: %w", mart.name, err)
+	}
+	return nil
+}
+
 // SellAtNearestMart sells qty of one native item at the nearest reachable
 // recovery mart. Every Gen-I clerk buys any sellable item, so unlike
 // EnsureItemStock the choice of mart ignores stock. Sell verifies the bag and
@@ -318,11 +342,8 @@ func SellAtNearestMart(m *emu.Emu, romData []byte, policy MovePolicy, item uint8
 	}
 	// Same counter geometry as EnsureItemStock, and the same tile
 	// reachableStockMarts measured.
-	if _, err := TravelFlee(m, romData, Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}, policy, inventoryRecoveryBattles); err != nil {
-		return fmt.Errorf("skill: SellAtNearestMart: reach %s: %w", mart.name, err)
-	}
-	if err := Face(m, 1, 5); err != nil {
-		return fmt.Errorf("skill: SellAtNearestMart: face %s counter: %w", mart.name, err)
+	if err := approachMartCounter(m, romData, mart, policy); err != nil {
+		return fmt.Errorf("skill: SellAtNearestMart: %w", err)
 	}
 	return Sell(m, item, qty)
 }
