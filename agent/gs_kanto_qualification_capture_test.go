@@ -9,9 +9,9 @@ import (
 
 func gsKantoCaptureObs(id game.GameID, johto bool, steps ...ProgressID) Observation {
 	obs := gsLeagueCaptureObs(id, steps...)
-	obs.Region = game.RegionKanto
+	obs.Region = string(game.RegionKanto)
 	if johto {
-		obs.Region = game.RegionJohto
+		obs.Region = string(game.RegionJohto)
 	}
 	return obs
 }
@@ -51,9 +51,9 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 					{"wrong destination region", goal, before, func() Observation {
 						v := after
 						if afterJohto {
-							v.Region = game.RegionKanto
+							v.Region = string(game.RegionKanto)
 						} else {
-							v.Region = game.RegionJohto
+							v.Region = string(game.RegionJohto)
 						}
 						return v
 					}()},
