@@ -136,8 +136,8 @@ func TestGSKantoROMCheckpointReplay(t *testing.T) {
 		t.Fatalf("untrusted Kanto replay input: require settled %s on %s, prerequisite %s and unearned %s",
 			source.progress, source.mapName, source.previous, target)
 	}
-	if (source.progress == gsprofile.ProgressSSTicketReceived && initial.Region != game.RegionJohto) ||
-		(source.progress != gsprofile.ProgressSSTicketReceived && initial.Region != game.RegionKanto) {
+	if (source.progress == gsprofile.ProgressSSTicketReceived && initial.Region != string(game.RegionJohto)) ||
+		(source.progress != gsprofile.ProgressSSTicketReceived && initial.Region != string(game.RegionKanto)) {
 		t.Fatalf("Kanto replay source in unexpected region: %s", initial.Region)
 	}
 	if err := gsCoastalWriteJSON(filepath.Join(out, "initial.json"), initial); err != nil {
@@ -178,7 +178,7 @@ func TestGSKantoROMCheckpointReplay(t *testing.T) {
 		t.Fatalf("%s did not prove the retail event: %v", target, err)
 	}
 	if !after.Story.Has(target) || after.InBattle || !after.Controllable ||
-		after.Region != game.RegionKanto {
+		after.Region != string(game.RegionKanto) {
 		t.Fatalf("%s did not finish at a stable Kanto story boundary", target)
 	}
 	if err := gsCoastalWriteJSON(filepath.Join(out, fmt.Sprintf("%s.json", stageName)), after); err != nil {
