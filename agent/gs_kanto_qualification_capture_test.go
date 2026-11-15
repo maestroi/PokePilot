@@ -34,12 +34,13 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 					t.Fatalf("valid retail Kanto transition refused: stage=%+v ok=%t", got, ok)
 				}
 
-				cases := []struct {
+				type captureCase struct {
 					name   string
 					goal   Objective
 					before Observation
 					after  Observation
-				}{
+				}
+				cases := []captureCase{
 					{"already complete", goal, after, after},
 					{"no new event", goal, before, before},
 					{"wrong objective kind", Objective{Kind: KindHeal, Progress: stage.progress}, before, after},
@@ -70,30 +71,10 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 				// impossible to remove one flag while keeping the other.
 				if stage.previous != hall {
 					cases = append(cases,
-						struct {
-							name string
-							goal Objective
-							before Observation
-							after Observation
-						}{"missing previous event", goal, gsKantoCaptureObs(id, beforeJohto, hall), after},
-						struct {
-							name string
-							goal Objective
-							before Observation
-							after Observation
-						}{"previous flag vanished", goal, before, gsKantoCaptureObs(id, afterJohto, hall, stage.progress)},
-						struct {
-							name string
-							goal Objective
-							before Observation
-							after Observation
-						}{"Hall of Fame absent at start", goal, gsKantoCaptureObs(id, beforeJohto, stage.previous), after},
-						struct {
-							name string
-							goal Objective
-							before Observation
-							after Observation
-						}{"Hall event vanished", goal, before, gsKantoCaptureObs(id, afterJohto, stage.previous, stage.progress)},
+						captureCase{"missing previous event", goal, gsKantoCaptureObs(id, beforeJohto, hall), after},
+						captureCase{"previous flag vanished", goal, before, gsKantoCaptureObs(id, afterJohto, hall, stage.progress)},
+						captureCase{"Hall of Fame absent at start", goal, gsKantoCaptureObs(id, beforeJohto, stage.previous), after},
+						captureCase{"Hall event vanished", goal, before, gsKantoCaptureObs(id, afterJohto, stage.previous, stage.progress)},
 					)
 				}
 				for _, tc := range cases {
