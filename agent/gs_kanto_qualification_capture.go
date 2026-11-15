@@ -48,10 +48,10 @@ func gsKantoCaptureEligible(o Objective, before, after Observation) (gsKantoChec
 			return gsKantoCheckpointBoundary{}, false
 		}
 		if stage.progress == gsprofile.ProgressSSTicketReceived {
-			if after.Region != game.RegionJohto {
+			if after.Region != string(game.RegionJohto) {
 				return gsKantoCheckpointBoundary{}, false
 			}
-		} else if after.Region != game.RegionKanto {
+		} else if after.Region != string(game.RegionKanto) {
 			return gsKantoCheckpointBoundary{}, false
 		}
 		return stage, true
