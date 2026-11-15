@@ -367,8 +367,10 @@ type economyObjectiveProvider struct{}
 func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	out := append(repelUseObjectives(ctx.obs), fundingSaleObjectives(ctx.obs)...)
+	earn, blocked := incomeObjectives(ctx.obs, ctx.known, ctx.catalog.IncomeSources)
+	out = append(out, earn...)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
+		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...), Blocked: blocked}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -378,7 +380,7 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	economy := EconomyContext(obs)
 	if economy == nil {
-		return objectiveProviderResult{Candidates: out}
+		return objectiveProviderResult{Candidates: out, Blocked: blocked}
 	}
 	if cap(out)-len(out) < len(economy.Purchases) {
 		grown := make([]Objective, len(out), len(out)+len(economy.Purchases))
@@ -397,7 +399,7 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 			}
 		}
 	}
-	return objectiveProviderResult{Candidates: out}
+	return objectiveProviderResult{Candidates: out, Blocked: blocked}
 }
 
 const dexCaptureSupplyIntent = "dex-capture-supply"
