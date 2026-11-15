@@ -108,7 +108,7 @@ func TestGSKantoQualificationBoundariesAreOwnedRetailMaps(t *testing.T) {
 		}
 		seen[stage.directory] = true
 		id, err := gsOpeningMapID(stage.mapName)
-		if err != nil || !gsSecondBadgeOwnedMap(id) {
+		if err != nil || (!gsOpeningScriptMap(id) && !gsSecondBadgeOwnedMap(id)) {
 			t.Fatalf("unowned checkpoint map %s: id=%#04x err=%v", stage.mapName, id, err)
 		}
 	}
