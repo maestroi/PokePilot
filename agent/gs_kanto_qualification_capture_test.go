@@ -42,10 +42,6 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 				}{
 					{"already complete", goal, after, after},
 					{"no new event", goal, before, before},
-					{"missing previous event", goal, gsKantoCaptureObs(id, beforeJohto, hall), after},
-					{"previous flag vanished", goal, before, gsKantoCaptureObs(id, afterJohto, hall, stage.progress)},
-					{"Hall of Fame absent at start", goal, gsKantoCaptureObs(id, beforeJohto, stage.previous), after},
-					{"Hall event vanished", goal, before, gsKantoCaptureObs(id, afterJohto, stage.previous, stage.progress)},
 					{"wrong objective kind", Objective{Kind: KindHeal, Progress: stage.progress}, before, after},
 					{"wrong objective progress", Objective{Kind: KindProgress, Progress: stage.previous}, before, after},
 					{"initial script still running", goal, func() Observation { v := before; v.Controllable = false; return v }(), after},
@@ -69,6 +65,36 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 						}
 						return v
 					}()},
+				}
+				// The ticket's immediate predecessor IS Hall of Fame. It is
+				// impossible to remove one flag while keeping the other.
+				if stage.previous != hall {
+					cases = append(cases,
+						struct {
+							name string
+							goal Objective
+							before Observation
+							after Observation
+						}{"missing previous event", goal, gsKantoCaptureObs(id, beforeJohto, hall), after},
+						struct {
+							name string
+							goal Objective
+							before Observation
+							after Observation
+						}{"previous flag vanished", goal, before, gsKantoCaptureObs(id, afterJohto, hall, stage.progress)},
+						struct {
+							name string
+							goal Objective
+							before Observation
+							after Observation
+						}{"Hall of Fame absent at start", goal, gsKantoCaptureObs(id, beforeJohto, stage.previous), after},
+						struct {
+							name string
+							goal Objective
+							before Observation
+							after Observation
+						}{"Hall event vanished", goal, before, gsKantoCaptureObs(id, afterJohto, stage.previous, stage.progress)},
+					)
 				}
 				for _, tc := range cases {
 					t.Run(tc.name, func(t *testing.T) {
