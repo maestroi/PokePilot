@@ -868,3 +868,44 @@ precise transitions when cartridge-observed, without insisting on overworld
 control or pressing through the credits. This is narrowly scoped to those
 two events; all other progress goals still require a stable game boundary.
 A green public ROM-free CI run is not proof this replay succeeded on retail ROMs.
+
+## Gen2: Kanto checkpoint qualification after Hall of Fame
+
+The Kanto story executors remain **experimental** until their Gold/Silver retail
+replays pass. To avoid replaying Johto and the League for each failure, a
+runner with `POKEPILOT_QUALIFICATION_CORPUS` set retains these private
+first-clear qualification boundaries:
+
+| Captured checkpoint | Verified milestone | Native map | Next replay selector |
+| --- | --- | --- | --- |
+| `gs-kanto/<game>/post-ticket/start.state` | Elm's real S.S. Ticket | Elm's Lab | `first-landing` |
+| `gs-kanto/<game>/post-landing/start.state` | First S.S. Aqua disembarkation | Vermilion Port | `thunder` |
+| `gs-kanto/<game>/post-thunder/start.state` | Lt. Surge's badge | Vermilion Gym | `marsh` |
+| `gs-kanto/<game>/post-marsh/start.state` | Sabrina's badge | Saffron Gym | `rainbow` |
+| `gs-kanto/<game>/post-rainbow/start.state` | Erika's badge | Celadon Gym | `soul` |
+| `gs-kanto/<game>/post-soul/start.state` | Janine's badge | Fuchsia Gym | future Power Plant/Misty stages |
+
+Each capture requires the Hall of Fame event, its preceding retail event,
+a newly committed target event, matching Gold/Silver identity, correct region
+and a stable native map. The checked state is atomically published to a
+private first-writer-wins location with ROM and state hashes. An existing
+save containing an earned badge cannot manufacture a first-clear fixture.
+
+Replay one objective from its **previous** checkpoint (change stage and source
+together for the subsequent Kanto gym legs):
+
+```sh
+export POKEPILOT_GS_KANTO_REPLAY=1
+export POKEPILOT_GS_KANTO_GAME=gold
+export POKEPILOT_GS_KANTO_STAGE=first-landing
+export POKEPILOT_GS_KANTO_ROM="$HOME/.config/pokepilot/pokemon_gold.gbc"
+export POKEPILOT_GS_KANTO_START="$POKEPILOT_QUALIFICATION_CORPUS/gs-kanto/gold/post-ticket/start.state"
+export POKEPILOT_GS_KANTO_OUT="$HOME/.local/state/pokepilot/kanto-debug"
+go test -count=1 -timeout=100m ./agent -run '^TestGSKantoROMCheckpointReplay$' -v
+```
+
+The replay checks retail ROM SHA-1, checkpoint provenance and SHA-256, the
+source map/region and prerequisites, and the next event/badge via the live
+adapter postcondition. Missing inputs fail closed; private failures retain
+`failure.state` and JSON observations. ROM-free CI does **not** establish
+successful retail Kanto progression.
