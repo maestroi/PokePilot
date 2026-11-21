@@ -297,6 +297,22 @@ runLoop:
 			}
 
 			action := actionFor(objectiveResult.Outcome)
+			// A terminal-classified execution error whose underlying (primary)
+			// cause is a known recoverable boundary — for example a dirty
+			// objective boundary joined with a consumed one-time static
+			// capture — is objective-local feedback, not a fatal run error.
+			// Quarantine the objective and advance to the next task instead
+			// of stopping the whole run; the bounded failure and watchdog
+			// budgets remain the outer guard. Genuine terminal controller
+			// faults still stop the run so the wall can retry the attempt
+			// (#2939).
+			divertedTerminal := false
+			if action == actionStop && terminalOutcomeRecoverable(obj, objectiveResult) {
+				divertedTerminal = true
+				action = actionReplan
+				engine.failures.record(objectiveResult)
+				objectiveResult = unwrapDirtyBoundaryCause(objectiveResult)
+			}
 			switch action {
 			case actionChoice, actionStop:
 				markLastOutcomeTerminal(&res)
@@ -310,24 +326,26 @@ runLoop:
 				// safety envelope. Only outcomes already classified as recoverable
 				// can reach this hook, and only the conservative pause/impossible
 				// choices may tighten policy into a stop.
-				if decider, ok := p.(FailureDecisionPlanner); ok {
-					decision, decisionErr := decider.DecideFailure(objectiveResult)
-					if decisionErr == nil {
-						stop, mappingErr := failureDecisionStopsRun(objectiveResult, decision.Choice)
-						if mappingErr == nil && stop {
-							markLastOutcomeTerminal(&res)
-							res.Stop = StopError
-							sentinel := ErrDecisionImpossible
-							if decision.Choice == "pause" {
-								sentinel = ErrDecisionPause
+				if !divertedTerminal {
+					if decider, ok := p.(FailureDecisionPlanner); ok {
+						decision, decisionErr := decider.DecideFailure(objectiveResult)
+						if decisionErr == nil {
+							stop, mappingErr := failureDecisionStopsRun(objectiveResult, decision.Choice)
+							if mappingErr == nil && stop {
+								markLastOutcomeTerminal(&res)
+								res.Stop = StopError
+								sentinel := ErrDecisionImpossible
+								if decision.Choice == "pause" {
+									sentinel = ErrDecisionPause
+								}
+								res.Err = fmt.Errorf("%w: disposition=%s confidence=%.3f after %s: %v",
+									sentinel, decision.Choice, decision.Confidence, obj, execErr)
+								break
 							}
-							res.Err = fmt.Errorf("%w: disposition=%s confidence=%.3f after %s: %v",
-								sentinel, decision.Choice, decision.Confidence, obj, execErr)
-							break
 						}
 					}
+					engine.failures.record(objectiveResult)
 				}
-				engine.failures.record(objectiveResult)
 			}
 			if res.Stop != StopUnset {
 				break

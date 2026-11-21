@@ -383,8 +383,12 @@ func routePolicySibling(o Objective) (Objective, bool) {
 // record quarantines the exact objective/failure/world fingerprint after a
 // recoverable failure. The entry lives inside runFailurePolicy so quarantine,
 // repeat detection and retry budgets cannot drift into separate state machines.
+// Terminal-classified failures that wrap a recoverable primary cause (a dirty
+// boundary joined with e.g. a consumed one-time static capture) are recorded
+// too: the run loop diverts them into this replan flow instead of stopping the
+// run (#2939).
 func (f *runFailurePolicy) record(result ObjectiveResult) {
-	if f == nil || actionFor(result.Outcome) != actionReplan {
+	if f == nil || (actionFor(result.Outcome) != actionReplan && !terminalOutcomeRecoverable(result.Objective, result)) {
 		return
 	}
 	fingerprint := fingerprintRecoverableFailure(result.Objective, result)
