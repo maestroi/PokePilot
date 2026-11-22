@@ -149,7 +149,8 @@ func TestGSKantoROMCheckpointReplay(t *testing.T) {
 	}
 	if initial.GameID != id || !initial.Controllable || initial.InBattle ||
 		!initial.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) ||
-		!initial.Story.Has(source.progress) || !initial.Story.Has(source.previous) ||
+		!initial.Story.Has(source.progress) ||
+		(gsKantoPredecessorMustPersist(source.progress) && !initial.Story.Has(source.previous)) ||
 		initial.Story.Has(target) ||
 		profile.DecodeOverworld(m).NativeMapID != wantMap {
 		t.Fatalf("untrusted Kanto replay input: require settled %s on %s, prerequisite %s and unearned %s",
@@ -196,8 +197,14 @@ func TestGSKantoROMCheckpointReplay(t *testing.T) {
 	if err := adapter.VerifyPostcondition(objective, before, after, result); err != nil {
 		t.Fatalf("%s did not prove the retail event: %v", target, err)
 	}
-	if !after.Story.Has(target) || after.InBattle || !after.Controllable ||
-		after.Region != string(game.RegionKanto) {
+	if !after.Story.Has(target) || after.InBattle {
+		t.Fatalf("%s did not set the retail event after the battle", target)
+	}
+	// Red's disappearance flag is set before the credits return control.
+	// Requiring a Kanto overworld there would falsely reject his victory;
+	// the adapter's specialized verifier above proves the event transition.
+	if target != gsprofile.ProgressMtSilverRedDefeated &&
+		(!after.Controllable || after.Region != string(game.RegionKanto)) {
 		t.Fatalf("%s did not finish at a stable Kanto story boundary", target)
 	}
 	if err := gsCoastalWriteJSON(filepath.Join(out, fmt.Sprintf("%s.json", stageName)), after); err != nil {
