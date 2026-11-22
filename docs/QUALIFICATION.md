@@ -883,7 +883,16 @@ first-clear qualification boundaries:
 | `gs-kanto/<game>/post-thunder/start.state` | Lt. Surge's badge | Vermilion Gym | `marsh` |
 | `gs-kanto/<game>/post-marsh/start.state` | Sabrina's badge | Saffron Gym | `rainbow` |
 | `gs-kanto/<game>/post-rainbow/start.state` | Erika's badge | Celadon Gym | `soul` |
-| `gs-kanto/<game>/post-soul/start.state` | Janine's badge | Fuchsia Gym | future Power Plant/Misty stages |
+| `gs-kanto/<game>/post-soul/start.state` | Janine's badge | Fuchsia Gym | `manager` |
+| `gs-kanto/<game>/post-manager/start.state` | Power Plant manager's theft report | Power Plant | `rocket` |
+| `gs-kanto/<game>/post-rocket/start.state` | Cerulean Rocket encounter | Cerulean Gym | `machine-part` |
+| `gs-kanto/<game>/post-machine-part/start.state` | Hidden Machine Part recovered | Cerulean Gym | `restore-power` |
+| `gs-kanto/<game>/post-power/start.state` | Power Plant restored | Power Plant | `copycat` |
+| `gs-kanto/<game>/post-copycat/start.state` | Copycat's missing-doll request | Copycat's House 2F | `lost-doll` |
+| `gs-kanto/<game>/post-lost-doll/start.state` | Lost Doll received from Fan Club | Vermilion Fan Club | `rail-pass` |
+| `gs-kanto/<game>/post-rail-pass/start.state` | Copycat's actual Magnet Train Pass | Copycat's House 2F | `misty-date` |
+| `gs-kanto/<game>/post-misty-date/start.state` | Misty returns to her Gym | Route 25 | `cascade` |
+| `gs-kanto/<game>/post-cascade/start.state` | Misty's Cascade Badge | Cerulean Gym | future Snorlax/Brock stages |
 
 Each capture requires the Hall of Fame event, its preceding retail event,
 a newly committed target event, matching Gold/Silver identity, correct region
@@ -892,7 +901,11 @@ private first-writer-wins location with ROM and state hashes. An existing
 save containing an earned badge cannot manufacture a first-clear fixture.
 
 Replay one objective from its **previous** checkpoint (change stage and source
-together for the subsequent Kanto gym legs):
+together for subsequent Kanto legs). The same selectors are available in
+**Actions → Gen2 Kanto ROM Stage Replay → Run workflow** on the private
+`pokepilot-rom` runner: choose Gold, Silver or both and one stage. The
+workflow refuses absent private fixtures and uploads only safe logs/JSON,
+never the ROM, `.sav` or `.state` bytes.
 
 ```sh
 export POKEPILOT_GS_KANTO_REPLAY=1

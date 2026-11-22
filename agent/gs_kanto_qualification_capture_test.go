@@ -91,12 +91,21 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 
 func TestGSKantoQualificationBoundariesAreOwnedRetailMaps(t *testing.T) {
 	want := map[string]string{
-		"post-ticket":  "ELMS_LAB",
-		"post-landing": "VERMILION_PORT",
-		"post-thunder": "VERMILION_GYM",
-		"post-marsh":   "SAFFRON_GYM",
-		"post-rainbow": "CELADON_GYM",
-		"post-soul":    "FUCHSIA_GYM",
+		"post-ticket":       "ELMS_LAB",
+		"post-landing":      "VERMILION_PORT",
+		"post-thunder":      "VERMILION_GYM",
+		"post-marsh":        "SAFFRON_GYM",
+		"post-rainbow":      "CELADON_GYM",
+		"post-soul":         "FUCHSIA_GYM",
+		"post-manager":      "POWER_PLANT",
+		"post-rocket":       "CERULEAN_GYM",
+		"post-machine-part": "CERULEAN_GYM",
+		"post-power":        "POWER_PLANT",
+		"post-copycat":      "COPYCATS_HOUSE_2F",
+		"post-lost-doll":    "POKEMON_FAN_CLUB",
+		"post-rail-pass":    "COPYCATS_HOUSE_2F",
+		"post-misty-date":   "ROUTE_25",
+		"post-cascade":      "CERULEAN_GYM",
 	}
 	if len(gsKantoCheckpointBoundaries) != len(want) {
 		t.Fatalf("Kanto checkpoint count=%d, want %d", len(gsKantoCheckpointBoundaries), len(want))
