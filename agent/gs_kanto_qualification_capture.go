@@ -22,6 +22,15 @@ var gsKantoCheckpointBoundaries = [...]gsKantoCheckpointBoundary{
 	{gsprofile.ProgressKantoMarshBadgeEarned, gsprofile.ProgressKantoThunderBadgeEarned, "post-marsh", "SAFFRON_GYM"},
 	{gsprofile.ProgressKantoRainbowBadgeEarned, gsprofile.ProgressKantoMarshBadgeEarned, "post-rainbow", "CELADON_GYM"},
 	{gsprofile.ProgressKantoSoulBadgeEarned, gsprofile.ProgressKantoRainbowBadgeEarned, "post-soul", "FUCHSIA_GYM"},
+	{gsprofile.ProgressKantoManagerMet, gsprofile.ProgressKantoSoulBadgeEarned, "post-manager", "POWER_PLANT"},
+	{gsprofile.ProgressKantoRocketAtGym, gsprofile.ProgressKantoManagerMet, "post-rocket", "CERULEAN_GYM"},
+	{gsprofile.ProgressKantoMachinePartFound, gsprofile.ProgressKantoRocketAtGym, "post-machine-part", "CERULEAN_GYM"},
+	{gsprofile.ProgressKantoPowerRestored, gsprofile.ProgressKantoMachinePartFound, "post-power", "POWER_PLANT"},
+	{gsprofile.ProgressKantoCopycatMet, gsprofile.ProgressKantoPowerRestored, "post-copycat", "COPYCATS_HOUSE_2F"},
+	{gsprofile.ProgressKantoLostDollReceived, gsprofile.ProgressKantoCopycatMet, "post-lost-doll", "POKEMON_FAN_CLUB"},
+	{gsprofile.ProgressKantoRailPassReceived, gsprofile.ProgressKantoLostDollReceived, "post-rail-pass", "COPYCATS_HOUSE_2F"},
+	{gsprofile.ProgressKantoMistyReturned, gsprofile.ProgressKantoRailPassReceived, "post-misty-date", "ROUTE_25"},
+	{gsprofile.ProgressKantoCascadeBadgeEarned, gsprofile.ProgressKantoMistyReturned, "post-cascade", "CERULEAN_GYM"},
 }
 
 // gsKantoCaptureEligible accepts only a NEW verified progress transition
