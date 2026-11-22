@@ -30,6 +30,15 @@ var gsKantoReplaySpecs = [...]gsKantoReplaySpec{
 	{"marsh", "post-thunder", gsprofile.ProgressKantoMarshBadgeEarned},
 	{"rainbow", "post-marsh", gsprofile.ProgressKantoRainbowBadgeEarned},
 	{"soul", "post-rainbow", gsprofile.ProgressKantoSoulBadgeEarned},
+	{"manager", "post-soul", gsprofile.ProgressKantoManagerMet},
+	{"rocket", "post-manager", gsprofile.ProgressKantoRocketAtGym},
+	{"machine-part", "post-rocket", gsprofile.ProgressKantoMachinePartFound},
+	{"restore-power", "post-machine-part", gsprofile.ProgressKantoPowerRestored},
+	{"copycat", "post-power", gsprofile.ProgressKantoCopycatMet},
+	{"lost-doll", "post-copycat", gsprofile.ProgressKantoLostDollReceived},
+	{"rail-pass", "post-lost-doll", gsprofile.ProgressKantoRailPassReceived},
+	{"misty-date", "post-rail-pass", gsprofile.ProgressKantoMistyReturned},
+	{"cascade", "post-misty-date", gsprofile.ProgressKantoCascadeBadgeEarned},
 }
 
 func gsKantoReplaySelection(name string) (gsKantoCheckpointBoundary, game.ProgressID, bool) {
