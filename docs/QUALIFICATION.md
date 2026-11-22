@@ -892,7 +892,14 @@ first-clear qualification boundaries:
 | `gs-kanto/<game>/post-lost-doll/start.state` | Lost Doll received from Fan Club | Vermilion Fan Club | `rail-pass` |
 | `gs-kanto/<game>/post-rail-pass/start.state` | Copycat's actual Magnet Train Pass | Copycat's House 2F | `misty-date` |
 | `gs-kanto/<game>/post-misty-date/start.state` | Misty returns to her Gym | Route 25 | `cascade` |
-| `gs-kanto/<game>/post-cascade/start.state` | Misty's Cascade Badge | Cerulean Gym | future Snorlax/Brock stages |
+| `gs-kanto/<game>/post-cascade/start.state` | Misty's Cascade Badge | Cerulean Gym | `expn-card` |
+| `gs-kanto/<game>/post-expn-card/start.state` | Lavender Pokégear EXPN Card | Lavender Radio Tower 1F | `snorlax` |
+| `gs-kanto/<game>/post-snorlax/start.state` | Snorlax cleared with Poké Flute radio | Vermilion City | `boulder` |
+| `gs-kanto/<game>/post-boulder/start.state` | Brock's Boulder Badge | Pewter Gym | `volcano` |
+| `gs-kanto/<game>/post-volcano/start.state` | Blaine's Volcano Badge | Seafoam Gym | `invite-blue` |
+| `gs-kanto/<game>/post-blue-invited/start.state` | Blue invited from Cinnabar | Cinnabar Island | `earth` |
+| `gs-kanto/<game>/post-earth/start.state` | Blue's Earth Badge | Viridian Gym | `mt-silver-permit` |
+| `gs-kanto/<game>/post-mt-silver-permit/start.state` | Oak unlocks Mt. Silver | Oak's Lab | `red` |
 
 Each capture requires the Hall of Fame event, its preceding retail event,
 a newly committed target event, matching Gold/Silver identity, correct region
@@ -916,6 +923,19 @@ export POKEPILOT_GS_KANTO_START="$POKEPILOT_QUALIFICATION_CORPUS/gs-kanto/gold/p
 export POKEPILOT_GS_KANTO_OUT="$HOME/.local/state/pokepilot/kanto-debug"
 go test -count=1 -timeout=100m ./agent -run '^TestGSKantoROMCheckpointReplay$' -v
 ```
+
+The final `red` selector starts from the genuine Oak permit checkpoint.
+Red's actual disappearance event is checked using the existing special
+postcondition for the ending scene; there is deliberately **no post-Red
+first-clear checkpoint** because that event is set during the credits script
+before ordinary overworld control returns. The verifier must not confuse an
+uncontrollable ending with a failed battle.
+
+Blue's invitation is different from durable badges: its actor-visibility
+flag may be retired when he is beaten at Viridian. The Earth checkpoint
+therefore requires Blue's invitation **before** the battle and a new actual
+Earth Badge **after** the battle, without expecting the invitation actor to
+remain visible. No checkpoint can be synthesized by toggling event flags.
 
 The replay checks retail ROM SHA-1, checkpoint provenance and SHA-256, the
 source map/region and prerequisites, and the next event/badge via the live
