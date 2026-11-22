@@ -31,6 +31,21 @@ var gsKantoCheckpointBoundaries = [...]gsKantoCheckpointBoundary{
 	{gsprofile.ProgressKantoRailPassReceived, gsprofile.ProgressKantoLostDollReceived, "post-rail-pass", "COPYCATS_HOUSE_2F"},
 	{gsprofile.ProgressKantoMistyReturned, gsprofile.ProgressKantoRailPassReceived, "post-misty-date", "ROUTE_25"},
 	{gsprofile.ProgressKantoCascadeBadgeEarned, gsprofile.ProgressKantoMistyReturned, "post-cascade", "CERULEAN_GYM"},
+	{gsprofile.ProgressKantoExpansionCard, gsprofile.ProgressKantoCascadeBadgeEarned, "post-expn-card", "LAV_RADIO_TOWER_1F"},
+	{gsprofile.ProgressKantoSnorlaxCleared, gsprofile.ProgressKantoExpansionCard, "post-snorlax", "VERMILION_CITY"},
+	{gsprofile.ProgressKantoBoulderBadgeEarned, gsprofile.ProgressKantoSnorlaxCleared, "post-boulder", "PEWTER_GYM"},
+	{gsprofile.ProgressKantoVolcanoBadgeEarned, gsprofile.ProgressKantoBoulderBadgeEarned, "post-volcano", "SEAFOAM_GYM"},
+	{gsprofile.ProgressKantoBlueInvited, gsprofile.ProgressKantoVolcanoBadgeEarned, "post-blue-invited", "CINNABAR_ISLAND"},
+	{gsprofile.ProgressKantoEarthBadgeEarned, gsprofile.ProgressKantoBlueInvited, "post-earth", "VIRIDIAN_GYM"},
+	{gsprofile.ProgressMtSilverOpened, gsprofile.ProgressKantoEarthBadgeEarned, "post-mt-silver-permit", "OAKS_LAB"},
+}
+
+// Blue's invitation is a transient actor-visibility proof: the Viridian
+// Gym battle may remove him from that map and retire the invitation fact.
+// The Earth Badge remains independently durable. Require the invitation at
+// the START of the Earth battle, but not after its actual badge is awarded.
+func gsKantoPredecessorMustPersist(progress game.ProgressID) bool {
+	return progress != gsprofile.ProgressKantoEarthBadgeEarned
 }
 
 // gsKantoCaptureEligible accepts only a NEW verified progress transition
@@ -53,7 +68,8 @@ func gsKantoCaptureEligible(o Objective, before, after Observation) (gsKantoChec
 			continue
 		}
 		if before.Story.Has(stage.progress) || !after.Story.Has(stage.progress) ||
-			!before.Story.Has(stage.previous) || !after.Story.Has(stage.previous) {
+			!before.Story.Has(stage.previous) ||
+			(gsKantoPredecessorMustPersist(stage.progress) && !after.Story.Has(stage.previous)) {
 			return gsKantoCheckpointBoundary{}, false
 		}
 		if stage.progress == gsprofile.ProgressSSTicketReceived {

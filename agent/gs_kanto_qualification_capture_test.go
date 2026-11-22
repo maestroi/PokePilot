@@ -72,10 +72,17 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 				if stage.previous != hall {
 					cases = append(cases,
 						captureCase{"missing previous event", goal, gsKantoCaptureObs(id, beforeJohto, hall), after},
-						captureCase{"previous flag vanished", goal, before, gsKantoCaptureObs(id, afterJohto, hall, stage.progress)},
 						captureCase{"Hall of Fame absent at start", goal, gsKantoCaptureObs(id, beforeJohto, stage.previous), after},
 						captureCase{"Hall event vanished", goal, before, gsKantoCaptureObs(id, afterJohto, stage.previous, stage.progress)},
 					)
+					withoutPrevious := gsKantoCaptureObs(id, afterJohto, hall, stage.progress)
+					if gsKantoPredecessorMustPersist(stage.progress) {
+						cases = append(cases, captureCase{"previous flag vanished", goal, before, withoutPrevious})
+					} else if got, ok := gsKantoCaptureEligible(goal, before, withoutPrevious); !ok || got != stage {
+						// Defeating Blue may retire his actor-visibility flag;
+						// the Earth Badge itself remains a durable retail fact.
+						t.Fatal("Earth Badge capture rejected after Blue's invitation disappeared")
+					}
 				}
 				for _, tc := range cases {
 					t.Run(tc.name, func(t *testing.T) {
@@ -91,21 +98,28 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 
 func TestGSKantoQualificationBoundariesAreOwnedRetailMaps(t *testing.T) {
 	want := map[string]string{
-		"post-ticket":       "ELMS_LAB",
-		"post-landing":      "VERMILION_PORT",
-		"post-thunder":      "VERMILION_GYM",
-		"post-marsh":        "SAFFRON_GYM",
-		"post-rainbow":      "CELADON_GYM",
-		"post-soul":         "FUCHSIA_GYM",
-		"post-manager":      "POWER_PLANT",
-		"post-rocket":       "CERULEAN_GYM",
-		"post-machine-part": "CERULEAN_GYM",
-		"post-power":        "POWER_PLANT",
-		"post-copycat":      "COPYCATS_HOUSE_2F",
-		"post-lost-doll":    "POKEMON_FAN_CLUB",
-		"post-rail-pass":    "COPYCATS_HOUSE_2F",
-		"post-misty-date":   "ROUTE_25",
-		"post-cascade":      "CERULEAN_GYM",
+		"post-ticket":           "ELMS_LAB",
+		"post-landing":          "VERMILION_PORT",
+		"post-thunder":          "VERMILION_GYM",
+		"post-marsh":            "SAFFRON_GYM",
+		"post-rainbow":          "CELADON_GYM",
+		"post-soul":             "FUCHSIA_GYM",
+		"post-manager":          "POWER_PLANT",
+		"post-rocket":           "CERULEAN_GYM",
+		"post-machine-part":     "CERULEAN_GYM",
+		"post-power":            "POWER_PLANT",
+		"post-copycat":          "COPYCATS_HOUSE_2F",
+		"post-lost-doll":        "POKEMON_FAN_CLUB",
+		"post-rail-pass":        "COPYCATS_HOUSE_2F",
+		"post-misty-date":       "ROUTE_25",
+		"post-cascade":          "CERULEAN_GYM",
+		"post-expn-card":        "LAV_RADIO_TOWER_1F",
+		"post-snorlax":          "VERMILION_CITY",
+		"post-boulder":          "PEWTER_GYM",
+		"post-volcano":          "SEAFOAM_GYM",
+		"post-blue-invited":     "CINNABAR_ISLAND",
+		"post-earth":            "VIRIDIAN_GYM",
+		"post-mt-silver-permit": "OAKS_LAB",
 	}
 	if len(gsKantoCheckpointBoundaries) != len(want) {
 		t.Fatalf("Kanto checkpoint count=%d, want %d", len(gsKantoCheckpointBoundaries), len(want))
