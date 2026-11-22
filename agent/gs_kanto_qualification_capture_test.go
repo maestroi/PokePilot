@@ -91,11 +91,11 @@ func TestGSKantoQualificationCapturesFirstVerifiedMilestones(t *testing.T) {
 
 func TestGSKantoQualificationBoundariesAreOwnedRetailMaps(t *testing.T) {
 	want := map[string]string{
-		"post-ticket":  "ELMS_LAB",
-		"post-landing": "VERMILION_PORT",
-		"post-thunder": "VERMILION_GYM",
-		"post-marsh":   "SAFFRON_GYM",
-		"post-rainbow": "CELADON_GYM",
+		"post-ticket":       "ELMS_LAB",
+		"post-landing":      "VERMILION_PORT",
+		"post-thunder":      "VERMILION_GYM",
+		"post-marsh":        "SAFFRON_GYM",
+		"post-rainbow":      "CELADON_GYM",
 		"post-soul":         "FUCHSIA_GYM",
 		"post-manager":      "POWER_PLANT",
 		"post-rocket":       "CERULEAN_GYM",
