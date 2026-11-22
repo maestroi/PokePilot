@@ -39,6 +39,16 @@ var gsKantoReplaySpecs = [...]gsKantoReplaySpec{
 	{"rail-pass", "post-lost-doll", gsprofile.ProgressKantoRailPassReceived},
 	{"misty-date", "post-rail-pass", gsprofile.ProgressKantoMistyReturned},
 	{"cascade", "post-misty-date", gsprofile.ProgressKantoCascadeBadgeEarned},
+	{"expn-card", "post-cascade", gsprofile.ProgressKantoExpansionCard},
+	{"snorlax", "post-expn-card", gsprofile.ProgressKantoSnorlaxCleared},
+	{"boulder", "post-snorlax", gsprofile.ProgressKantoBoulderBadgeEarned},
+	{"volcano", "post-boulder", gsprofile.ProgressKantoVolcanoBadgeEarned},
+	{"invite-blue", "post-volcano", gsprofile.ProgressKantoBlueInvited},
+	{"earth", "post-blue-invited", gsprofile.ProgressKantoEarthBadgeEarned},
+	{"mt-silver-permit", "post-earth", gsprofile.ProgressMtSilverOpened},
+	// Red's event occurs during the scripted credits sequence, when the
+	// overworld is not controllable; only its PRE-fight checkpoint is saved.
+	{"red", "post-mt-silver-permit", gsprofile.ProgressMtSilverRedDefeated},
 }
 
 func gsKantoReplaySelection(name string) (gsKantoCheckpointBoundary, game.ProgressID, bool) {
