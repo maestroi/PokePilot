@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -183,7 +184,8 @@ func driveGSSecondBadgeInterruption(
 		// Later objectives legitimately walk back through early Johto, which
 		// NormalizeBoundary already owns; an interruption there is the same
 		// ordinary route battle/dialogue.
-		if !gsFirstBadgeOwnedMap(world.NativeMapID) && !gsSecondBadgeOwnedMap(world.NativeMapID) {
+		if !gsFirstBadgeOwnedMap(world.NativeMapID) && !gsSecondBadgeOwnedMap(world.NativeMapID) &&
+			!gsrom.PostLeagueMap(m.ROM(), world.NativeMapID) {
 			return fmt.Errorf("%w: map=%#04x at (%d,%d)", errGSSecondBadgeUnexpectedState, world.NativeMapID, world.X, world.Y)
 		}
 		if world.InBattle {

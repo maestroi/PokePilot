@@ -101,6 +101,27 @@ func postLeagueMap(name string, landmark uint8) bool {
 
 func (p *runtimeWorldProvider) MapIDs() []uint16 { return append([]uint16(nil), p.ids...) }
 
+// PostLeagueMap reports whether mapID is in the post-League world the
+// runtime routing admits from the cartridge (Kanto, ports, Fast Ship, Magnet
+// Train, Route 28, Mt. Silver). Controllers that own interruptions along a
+// route use it so they accept exactly the maps routing can enter.
+func PostLeagueMap(romData []byte, mapID uint16) bool {
+	provider, err := NewRuntimeWorldProvider(romData)
+	if err != nil {
+		return false
+	}
+	p := provider.(*runtimeWorldProvider)
+	if p.inSlice(mapID) {
+		return false
+	}
+	for _, id := range p.ids {
+		if id == mapID {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *runtimeWorldProvider) inSlice(mapID uint16) bool {
 	_, ok := p.slice.specs[mapID]
 	return ok

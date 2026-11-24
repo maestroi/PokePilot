@@ -183,3 +183,21 @@ func TestGoldBicycleGateIsAScriptBarrierWithoutBicycle(t *testing.T) {
 		t.Fatalf("barriers with bicycle = %+v, want none", got)
 	}
 }
+
+// Off-screen standing NPCs still block their tiles. Hidden (masked) map
+// objects and wanderers are not projected; loaded ones come from structs.
+func TestDecodeGen2LiveObjectsProjectsOffscreenStandingNPCs(t *testing.T) {
+	var mem fakeMemory
+	put := func(i int, sprite, x, y, move byte, mask byte) {
+		base := sym.MapObjects + uint16(i*sym.MapObjectLen)
+		mem[base], mem[base+1], mem[base+2], mem[base+3], mem[base+4] = 0xff, sprite, y+4, x+4, move
+		mem[sym.ObjectMasks+uint16(i)] = mask
+	}
+	put(1, 0x2d, 32, 8, 0x08, 0)     // standing left, off screen
+	put(2, 0x2d, 14, 10, 0x08, 0xff) // hidden by its event
+	put(3, 0x27, 20, 5, 0x02, 0)     // wanderer
+	objects, _ := decodeGen2LiveObjects(&mem)
+	if len(objects) != 1 || objects[0] != (game.LiveMapObject{Slot: 1, X: 32, Y: 8, Stationary: true}) {
+		t.Fatalf("objects = %+v, want only the off-screen standing NPC", objects)
+	}
+}

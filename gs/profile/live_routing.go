@@ -111,6 +111,23 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 		})
 		positions[slot] = game.MapPoint{X: x, Y: y}
 	}
+	// Object structs exist only for objects near the screen. A standing NPC
+	// off screen still blocks its tile; without it routing oscillates
+	// between two corridors whose blockers are never visible together
+	// (Route 13's Pokéfan Joshua and Bird Keeper Perry). wMapObjects keeps
+	// every object's tile; wObjectMasks hides the ones that are not there.
+	for i := 1; i < sym.NumMapObjects; i++ {
+		base := sym.MapObjects + uint16(i*sym.MapObjectLen)
+		if _, loaded := positions[i]; loaded || reader.Peek8(sym.ObjectMasks+uint16(i)) != 0 ||
+			reader.Peek8(base+1) == 0 || !gen2StationaryMovement[reader.Peek8(base+4)] {
+			continue
+		}
+		rawY, rawX := reader.Peek8(base+2), reader.Peek8(base+3)
+		if rawX < 4 || rawY < 4 {
+			continue
+		}
+		objects = append(objects, game.LiveMapObject{Slot: i, X: int(rawX) - 4, Y: int(rawY) - 4, Stationary: true})
+	}
 	return objects, positions
 }
 

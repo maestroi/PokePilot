@@ -80,8 +80,10 @@ func TestGSKantoGymAndStoryCatalogRunsThroughAllEightBadges(t *testing.T) {
 
 func TestGSKantoGymSpecsReferToActualRetailMaps(t *testing.T) {
 	for _, spec := range gsKantoGymStages {
-		if spec.progress == "" || spec.previous == "" || spec.x != spec.sx ||
-			spec.y+1 != spec.sy || spec.leader == "" {
+		// Adjacent, not necessarily below: Janine's south tile is a wall
+		// (TestGSKantoGymStandTilesAreWalkableBesideLeaders checks the ROM).
+		dx, dy := int(spec.sx)-int(spec.x), int(spec.sy)-int(spec.y)
+		if spec.progress == "" || spec.previous == "" || dx*dx+dy*dy != 1 || spec.leader == "" {
 			t.Fatalf("incomplete or nonadjacent Kanto leader spec: %+v", spec)
 		}
 		if _, ok := gsKantoGymForProgress(spec.progress); !ok {

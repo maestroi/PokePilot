@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -197,7 +198,8 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 	if !facts.InBattle && (gsOpeningScriptMap(facts.NativeMapID) || gsErrandScriptMap(facts.NativeMapID)) {
 		return nil
 	}
-	if facts.GaveMysteryEggToElm && (gsFirstBadgeOwnedMap(facts.NativeMapID) || gsSecondBadgeOwnedMap(facts.NativeMapID)) {
+	if facts.GaveMysteryEggToElm && (gsFirstBadgeOwnedMap(facts.NativeMapID) || gsSecondBadgeOwnedMap(facts.NativeMapID) ||
+		gsrom.PostLeagueMap(a.m.ROM(), facts.NativeMapID)) {
 		return nil
 	}
 	return fmt.Errorf("%w: map=%#04x at (%d,%d) controllable=%v battle=%v script=%v",
