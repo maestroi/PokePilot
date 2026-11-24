@@ -78,3 +78,28 @@ func TestGSKantoWaypointsMatchROMCollision(t *testing.T) {
 		}
 	}
 }
+
+// With the ROM topology, a Kanto map heals at a Kanto Center, never by
+// routing back to Johto.
+func TestGSKantoHealsAtNearestKantoCenter(t *testing.T) {
+	path := os.Getenv("POKEMON_GOLD_ROM")
+	if path == "" {
+		t.Skip("POKEMON_GOLD_ROM not set")
+	}
+	rom, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for from, want := range map[string]string{
+		"CERULEAN_CITY":      "CERULEAN_POKECENTER_1F",
+		"SILVER_CAVE_ROOM_1": "SILVER_CAVE_POKECENTER_1F",
+		"VERMILION_CITY":     "VERMILION_POKECENTER_1F",
+	} {
+		id, _ := gsOpeningMapID(from)
+		wantID, _ := gsOpeningMapID(want)
+		got, err := gsOwnedPokecenterID(rom, id)
+		if err != nil || got != wantID {
+			t.Errorf("%s heals at %#04x (%v), want %s", from, got, err, want)
+		}
+	}
+}
