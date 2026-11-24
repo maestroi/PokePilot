@@ -222,6 +222,7 @@ const (
 	NumBalls        uint16 = 0xD5FC
 	Balls           uint16 = 0xD5FD
 	MaxBalls               = 12
+	NumPCItems      uint16 = 0xD616 // wNumPCItems, after wBalls (MAX_BALLS*2+1)
 	PokegearFlags   uint16 = 0xD67C // wPokegearFlags
 	RadioTuningKnob uint16 = 0xD67D // wRadioTuningKnob, immediately after wPokegearFlags
 	// wPhoneList lives 40 bytes before wCurMapData (0xD9EE): 10 contact
