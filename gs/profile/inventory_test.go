@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	gsdata "github.com/maestroi/pokepilot/gs/data"
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
@@ -163,5 +164,22 @@ func TestDecodeGoldBattleResourcesProjectsItemsPocketMedicine(t *testing.T) {
 	}
 	if med, ok := res.Medicine(0x10); !ok || med.HP != 200 || med.Cures != "" {
 		t.Fatalf("Gen-II 0x10 medicine = %+v,%v want HYPER_POTION", med, ok)
+	}
+}
+
+// Cycling Road gates turn the player back at x=5 without a BICYCLE; with
+// one the gate is ordinary floor.
+func TestGoldBicycleGateIsAScriptBarrierWithoutBicycle(t *testing.T) {
+	var mem fakeMemory
+	gate, _ := gsdata.MapByName("ROUTE_16_GATE")
+	mem[sym.MapGroup], mem[sym.MapNumber] = gate.Group, gate.Number
+	p := NewGold()
+	if got := p.gen2ScriptBarriers(&mem); len(got) != 2 || got[0] != (game.MapPoint{X: 5, Y: 4}) {
+		t.Fatalf("barriers without bicycle = %+v", got)
+	}
+	mem[sym.NumKeyItems] = 1
+	mem[sym.KeyItems] = gen2BicycleItem
+	if got := p.gen2ScriptBarriers(&mem); got != nil {
+		t.Fatalf("barriers with bicycle = %+v, want none", got)
 	}
 }

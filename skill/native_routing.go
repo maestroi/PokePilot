@@ -179,6 +179,9 @@ func nativeRuntimeBlockers(live game.LiveTopologyState, header worldmodel.Native
 	for _, object := range live.LiveObjects {
 		blocked[[2]int{object.X, object.Y}] = true
 	}
+	for _, at := range live.ScriptBarriers {
+		blocked[[2]int{at.X, at.Y}] = true
+	}
 	for _, warp := range header.Warps {
 		if warp.Inert {
 			continue
@@ -198,6 +201,23 @@ func nativeRuntimeBlockers(live game.LiveTopologyState, header worldmodel.Native
 // by a sprite that may move.
 func nativeStaticBlockers(header worldmodel.NativeMapHeader, allowWarp *[2]int) map[[2]int]bool {
 	return nativeRuntimeBlockers(game.LiveTopologyState{}, header, allowWarp)
+}
+
+// nativeDurableBlockers adds stationary live objects to the static blockers:
+// a path sealed by an NPC that never leaves its tile (the S.S. Aqua's duty
+// sailor) is as unreachable as a wall for this journey, so the router must
+// re-route instead of waiting for it.
+func nativeDurableBlockers(live game.LiveTopologyState, header worldmodel.NativeMapHeader) map[[2]int]bool {
+	blocked := nativeStaticBlockers(header, nil)
+	for _, object := range live.LiveObjects {
+		if object.Stationary {
+			blocked[[2]int{object.X, object.Y}] = true
+		}
+	}
+	for _, at := range live.ScriptBarriers {
+		blocked[[2]int{at.X, at.Y}] = true
+	}
+	return blocked
 }
 
 // nativeErrNoPathCausedBySprites reports whether a no-path result would clear
@@ -538,7 +558,7 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			if pushed {
 				continue // One boulder moved; rebuild all live object positions.
 			}
-			staticBlocked := nativeStaticBlockers(header, nil)
+			staticBlocked := nativeDurableBlockers(live, header)
 			delete(staticBlocked, [2]int{int(liveWorld.X), int(liveWorld.Y)})
 			delete(staticBlocked, [2]int{int(dest.X), int(dest.Y)})
 			_, staticErr := world.FindNativePath(grid, int(liveWorld.X), int(liveWorld.Y), int(dest.X), int(dest.Y), staticBlocked)
@@ -1069,7 +1089,7 @@ func traverseNativeEdge(
 			// stays sealed with sprites removed is a permanent unreachable for
 			// the caller's route memory.
 			if errors.Is(err, world.ErrNoPath) {
-				staticBlocked := nativeStaticBlockers(header, nil)
+				staticBlocked := nativeDurableBlockers(live, header)
 				delete(staticBlocked, [2]int{int(state.X), int(state.Y)})
 				var staticErr error
 				switch edge.Kind {
@@ -1164,10 +1184,76 @@ type NativeRouteMemory struct {
 	// by entering through these warp entries.
 	goal        NativeDestination
 	goodEntries map[int]bool
+	// proved marks maps whose same-map warp reachability was already proven.
+	proved map[uint16]bool
 }
 
 func NewNativeRouteMemory() *NativeRouteMemory {
 	return &NativeRouteMemory{unreachable: map[world.NativeUnreachable]bool{}, entry: world.NativeEntryUnknown}
+}
+
+// nativeProveTeleporterMap proves, once per journey, which of the current
+// map's edges each of its entries can actually reach on the static floor.
+// Maps whose warps lead back into themselves (Saffron Gym's teleport pads,
+// ladder pairs) are a graph inside one map: without these proofs the router
+// discovers sealed pads one failed attempt at a time and cycles past its
+// transition budget. Only geometry and warp tiles are used, never sprites.
+func nativeProveTeleporterMap(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider,
+	graph *world.NativeGraph, state game.OverworldState, mem *NativeRouteMemory) {
+	mapID := state.NativeMapID
+	if mem.proved[mapID] {
+		return
+	}
+	selfWarp := false
+	for _, e := range graph.Edges[mapID] {
+		selfWarp = selfWarp || (e.Kind == world.EdgeWarp && e.To == mapID)
+	}
+	if !selfWarp {
+		return
+	}
+	grid, live, header, err := nativeLiveGrid(m, profile, provider, mapID)
+	if err != nil {
+		return
+	}
+	if mem.proved == nil {
+		mem.proved = map[uint16]bool{}
+	}
+	mem.proved[mapID] = true
+	for _, bad := range nativeTeleporterProofs(provider, grid, live, header, graph.Edges[mapID], mapID, mem.entry, state.X, state.Y) {
+		mem.unreachable[bad] = true
+	}
+}
+
+// nativeTeleporterProofs lists (entry, edge) pairs the static floor seals:
+// from each warp landing, and from the player's tile when the entry is
+// unknown, every edge whose approach has no path.
+func nativeTeleporterProofs(provider worldmodel.NativeGridProvider, grid *world.NativeGrid, live game.LiveTopologyState,
+	header worldmodel.NativeMapHeader, edges []world.NativeEdge, mapID uint16, entry int, x, y uint8) []world.NativeUnreachable {
+	starts := map[int][2]int{}
+	if entry == world.NativeEntryUnknown {
+		starts[world.NativeEntryUnknown] = [2]int{int(x), int(y)}
+	}
+	for i, w := range header.Warps {
+		starts[i] = [2]int{int(w.X), int(w.Y)}
+	}
+	var out []world.NativeUnreachable
+	for from, at := range starts {
+		blocked := nativeStaticBlockers(header, nil)
+		delete(blocked, at)
+		for _, e := range edges {
+			var reachErr error
+			switch e.Kind {
+			case world.EdgeWarp:
+				_, _, reachErr = nativeWarpApproach(grid, at[0], at[1], int(e.WarpX), int(e.WarpY), blocked)
+			case world.EdgeConnection:
+				_, _, reachErr = nativeConnectionApproach(provider, grid, live, e, at[0], at[1], blocked)
+			}
+			if errors.Is(reachErr, world.ErrNoPath) {
+				out = append(out, world.NativeUnreachable{Map: mapID, Entry: from, Edge: e})
+			}
+		}
+	}
+	return out
 }
 
 // GoToNativeRemembering is GoToNative with caller-owned route memory.
@@ -1265,6 +1351,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		if goodEntries != nil {
 			accept = func(e world.NativeEdge) bool { return e.Kind == world.EdgeWarp && goodEntries[e.Entry()] }
 		}
+		nativeProveTeleporterMap(m, profile, provider, graph, state, mem)
 		route, routeErr := world.FindNativeRouteToEntry(graph, state.NativeMapID, mem.entry, dest.Map, accept, mem.unreachable)
 		if routeErr != nil {
 			return fmt.Errorf("skill: native routing: route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, routeErr)

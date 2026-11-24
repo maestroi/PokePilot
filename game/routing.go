@@ -28,6 +28,10 @@ type LiveMapObject struct {
 	// Pushable is true only for live movable boulders, never ordinary NPCs
 	// or static scenery sharing the same sprite. Profiles own that distinction.
 	Pushable bool
+	// Stationary is true when the profile proves the object never leaves its
+	// tile on its own (standing or spinning in place). Waiting for it to move
+	// cannot open a path it seals; only a script can move it.
+	Stationary bool
 }
 
 // MapShellPhase is where a cartridge's overworld map shell is in its own entry
@@ -74,6 +78,10 @@ type LiveTopologyState struct {
 	LiveObjects     []LiveMapObject
 	ObjectPositions map[int]MapPoint
 	HiddenObjects   map[int]bool
+	// ScriptBarriers are floor tiles whose map script turns the player back
+	// in the current game state (a Cycling Road gate without a Bicycle). The
+	// static grid calls them floor; routing must treat them as walls.
+	ScriptBarriers []MapPoint
 }
 
 // RoutingDecoder hides game-specific WRAM layout for the live map block buffer

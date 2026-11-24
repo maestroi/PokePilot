@@ -502,22 +502,27 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	if !ok {
 		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: tileset %#02x has no collision table", tileset)
 	}
+	return buildGen2Grid(p.rom, mapID, info, spec.name, tileset, table, blocks, mode)
+}
 
+// buildGen2Grid projects a map's blocks through its tileset collision table.
+func buildGen2Grid(rom []byte, mapID uint16, info gsdata.MapInfo, name string, tileset uint8, table []uint8,
+	blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
 	widthBlocks, heightBlocks := int(info.WidthBlocks), int(info.HeightBlocks)
 	if len(blocks) == 0 {
 		// Nil/empty blocks mean "use the cartridge's static map": connection
 		// approach needs the neighbour's landing seam without standing there.
-		if len(p.rom) == 0 {
-			return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s needs live blocks or a ROM for static blockdata", spec.name)
+		if len(rom) == 0 {
+			return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s needs live blocks or a ROM for static blockdata", name)
 		}
-		static, err := mapBlockData(p.rom, mapID)
+		static, err := mapBlockData(rom, mapID)
 		if err != nil {
 			return worldmodel.NativeGridSpec{}, err
 		}
 		blocks = static
 	}
 	if len(blocks) != widthBlocks*heightBlocks {
-		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", spec.name, len(blocks), widthBlocks*heightBlocks)
+		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", name, len(blocks), widthBlocks*heightBlocks)
 	}
 	width, height := widthBlocks*2, heightBlocks*2
 	out := worldmodel.NativeGridSpec{}
@@ -547,7 +552,7 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 			if block != 0 {
 				index := int(block)*4 + (x & 1) + 2*(y&1)
 				if index >= len(table) {
-					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", spec.name, block, index, tileset, len(table))
+					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", name, block, index, tileset, len(table))
 				}
 				collision = table[index]
 			}

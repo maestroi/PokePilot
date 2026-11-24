@@ -65,6 +65,9 @@ func executeGSSSTicket(m *emu.Emu, romData []byte) error {
 	return fmt.Errorf("%w: Elm dialogue ended without S.S. Ticket in key-item pocket", errGSSecondBadgeUnexpectedState)
 }
 
+// gsAquaLadderFrames bounds one ladder step and its warp fade.
+const gsAquaLadderFrames = 300
+
 // gsAquaMissingPrerequisites keeps ferry schedule and ticket policy in the
 // cartridge's region-transport contract, not in map or dialogue guesses.
 func gsAquaMissingPrerequisites(options []game.RegionTransportOption) error {
@@ -135,6 +138,15 @@ func gsAquaBoardFirstVoyage(m *emu.Emu, romData []byte, profile *gsprofile.Profi
 			} else {
 				m.Tap(emu.A, 3, 7)
 				accepted = true
+				// OlivinePortWalkUpToShipScript has one yesorno; its box
+				// stays rendered for a few frames after A. Only a prompt
+				// that appears after this one closed is a repeat.
+				if _, err := m.StepUntil(int(gsAquaBoardFrameBudget), func(m *emu.Emu) bool {
+					_, open := profile.DecodeTwoOption(m)
+					return !open
+				}); err != nil {
+					return fmt.Errorf("%w: ferry boarding choice did not close", errGSSecondBadgeStalled)
+				}
 			}
 			continue
 		}
@@ -244,15 +256,20 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 	if err := gsAquaInformDutySailor(m, romData, profile); err != nil {
 		return err
 	}
+	if err := gsAquaLeaveB1FByEastLadder(m, romData, profile); err != nil {
+		return err
+	}
 	stages := []struct {
 		name           string
 		mapName        string
 		sx, sy, tx, ty uint8
 		complete       func(gsprofile.FirstShipVoyageState) bool
 	}{
-		{"recover-lazy-sailor", "FAST_SHIP_CABINS_NNW_NNE_NE", 4, 25, 4, 26,
+		// Stand tiles come from ROM collision: (4,25) and (2,24) above the
+		// NPCs are walls, so talk from beside them.
+		{"recover-lazy-sailor", "FAST_SHIP_CABINS_NNW_NNE_NE", 3, 26, 4, 26,
 			func(s gsprofile.FirstShipVoyageState) bool { return s.RecoveredSailor }},
-		{"find-granddaughter", "FAST_SHIP_CABINS_SE_SSE_CAPTAINS_CABIN", 2, 24, 2, 25,
+		{"find-granddaughter", "FAST_SHIP_CABINS_SE_SSE_CAPTAINS_CABIN", 1, 25, 2, 25,
 			func(s gsprofile.FirstShipVoyageState) bool { return s.FoundGirl && s.Arrived }},
 	}
 	for _, stage := range stages {
@@ -299,4 +316,32 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 		}
 	}
 	return fmt.Errorf("%w: Vermilion Port did not set the first-voyage event", errGSSecondBadgeUnexpectedState)
+}
+
+// gsAquaLeaveB1FByEastLadder leaves FAST_SHIP_B1F after the duty sailor.
+// On the first voyage the north passage is closed by script, not geometry:
+// coord events at (30,7)/(31,7) (FastShipB1FSailorBlocksLeft/Right) move the
+// sailor onto whichever side the player steps toward. The east ladder at
+// (31,13) is the only exit, so take it explicitly instead of letting
+// fewest-transition routing pick the sealed west ladder.
+func gsAquaLeaveB1FByEastLadder(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	b1f, err := gsOpeningMapID("FAST_SHIP_B1F")
+	if err != nil {
+		return err
+	}
+	if profile.DecodeOverworld(m).NativeMapID != b1f {
+		return nil
+	}
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(b1f, 31, 12)); err != nil {
+		return fmt.Errorf("gen2 S.S. Aqua: reach B1F east ladder: %w", err)
+	}
+	m.Press(emu.Down)
+	_, err = m.StepUntil(gsAquaLadderFrames, func(m *emu.Emu) bool {
+		return profile.DecodeOverworld(m).NativeMapID != b1f
+	})
+	m.Release(emu.Down)
+	if err != nil {
+		return fmt.Errorf("%w: B1F east ladder did not leave the deck", errGSSecondBadgeUnexpectedState)
+	}
+	return nil
 }
