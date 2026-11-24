@@ -19,5 +19,7 @@ var gen2Medicines = []game.Medicine{
 	{NativeItemID: 0x0b, Cures: "frozen"},                                       // ICE_HEAL
 	{NativeItemID: 0x0c, Cures: "asleep"},                                       // AWAKENING
 	{NativeItemID: 0x0d, Cures: "paralyzed"},                                    // PARLYZ_HEAL
-	{NativeItemID: 0x26, Cures: game.MedicineCuresAny},                          // FULL_HEAL
+	{NativeItemID: 0x26, Cures: game.MedicineCuresAny},
+	{NativeItemID: 0x27, RevivePercent: 50},  // REVIVE
+	{NativeItemID: 0x28, RevivePercent: 100}, // MAX_REVIVE                          // FULL_HEAL
 }

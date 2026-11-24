@@ -33,7 +33,7 @@ bit or key item, and an `agent/gs_*.go` controller. Offers live in
 | Power Plant: manager, Cerulean Rocket, Machine Part, restore | verified-replay (local, Gold) | Needs Surf via the Route 9 lake channel (`gsKantoSurfToPowerPlant`). Leaving the strip by Surf once failed to settle at Route 10 North (15,10) and passed on retry |
 | Copycat, Lost Doll, Magnet Train Pass, Misty date, Cascade | verified-replay (local, Gold) | Fan Club stand tile was a table (fixed to (1,3)) |
 | Radio Card, EXPN Card, Snorlax, Brock, Blaine, Blue invite, Earth | verified-replay (local, Gold) | Radio Card came from the real run. Snorlax needed the 2x2 big-object blocker and seam re-entry |
-| Oak's Mt. Silver permit, Red | permit verified-replay (local, Gold); **Red: gap** | The route to Red and the battle trigger work. Red beat a solo L84 Meganium three times. Gen 2 combat recovery only trains the lead (capped at L60, Johto grind sites), so after a Red loss no executable preparation exists. See Next tasks |
+| Oak's Mt. Silver permit, Red | verified-replay (local, Gold) | Red was beaten with the lead trained to L95-96 at Silver Cave, the bag restocked at Indigo, and a mid-fight Revive of the fallen carry. Red is proven by the cartridge event. Earlier at L84, with only Revives in the bag, Red won every time |
 
 No unimplemented mandatory story milestone is known. **No full fresh-save →
 Red run has been observed.** Do not call Gen 2 verified until one has.
@@ -48,10 +48,10 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | Post-League routing topology | verified-replay (local, Gold) to Red's room | `gs/rom/world_runtime.go`: hand slice + ROM headers/collision for Kanto, ports, Fast Ship, Magnet Train, Route 28, Mt. Silver. Before 2026-11-24 routing had no Kanto maps at all |
 | Routing blockers | verified-replay (local, Gold) | stationary NPCs (incl. off-screen `wMapObjects`) and profile script barriers (Cycling Road gates without a BICYCLE) are durable; same-map teleporter maps get reachability proofs |
 | Field moves Cut/Surf/Strength/Flash/Fly/Whirlpool/Waterfall/Rock Smash + teaching carrier | implemented | `agent/gs_field_carrier.go`, `gs_surf.go`, `gs_pit_puzzles.go` |
-| Healing (nearest native Center), lead training after a combat loss | implemented | `gs_party_recovery.go`, `gs_combat_recovery.go` |
+| Healing (nearest native Center) | implemented; Kanto verified-replay | `gs_party_recovery.go`: Johto, Blackthorn, Kanto and Silver Cave Centers, searched over the ROM topology (Kanto heals in Kanto) |
 | Trainer/gym/scripted battles | implemented | shared battle driver + Gen 2 decoders |
 | League items: Indigo Mart purchase, between-room medicine/PP | verified-replay (local, Gold) | `gs_league_resources.go`, `gs_league_stock.go` |
-| In-battle medicine (HP/status/Full Restore, bench sacrifice heal) | verified-replay (local, Gold) | profile-owned `game.Medicine` table (`gs/profile/medicine.go`, `gen1/medicine.go`); Gen 2 had no in-battle items before this. Battle PACK USE/QUIT box decoded in `gs/profile/field_item.go` |
+| In-battle medicine (HP/status/Full Restore, bench sacrifice heal) | verified-replay (local, Gold) | profile-owned `game.Medicine` table (`gs/profile/medicine.go`, `gen1/medicine.go`); Gen 2 had no in-battle items before this. Battle PACK USE/QUIT box decoded in `gs/profile/field_item.go`. Revives a fainted bench carry (at least the foe's level) during a sacrificial turn |
 | PC storage | implemented | `gs_pc.go` |
 | Clock / day-night | implemented | `gs_clock_executor.go` |
 | Pokégear radio (Radio Card quiz, EXPN Card, Poké Flute channel) | implemented | `gs_radio_card_quiz.go`, `gs_kanto_radio_snorlax.go` |
@@ -95,20 +95,23 @@ state files.
 
 ## Next tasks (in priority order)
 
-1. **Red needs a stronger team (gap).** Gen 2 combat recovery trains only
-   the lead, capped at `gsCombatRecoveryMaxLevel` = 60, on Johto grind sites.
-   It needs (a) post-League grind sites (Route 28 / Silver Cave) and a higher
-   cap, and (b) bench training: the readiness model already assigns the
-   deficit past the ceiling to the bench. Also heal at the Silver Cave Center
-   before climbing. Repro: the local Kanto chain from the Mt. Silver permit
-   state (see "Local chain replays").
-2. Merge #2952 (in-battle medicine), then the stacked Kanto routing PR.
-3. Run a fresh Gold full-game run (default goal) on the farm once Postgres is
+1. Merge #2953 (Kanto routing), then the Red preparation PR stacked on it.
+2. Run a fresh Gold full-game run (default goal) on the farm once Postgres is
    back (`pokefarm_postgres` was 0/1 on 2026-11-24); triage the first failure.
-4. Replay the same chains on Silver.
-5. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right
+   This is the first chance to see the planner (not the chain harness) pick
+   heal/train objectives in Kanto and before Red.
+3. Replay the same chains on Silver.
+4. Bench training is still missing: Gen 2 recovery trains only the lead.
+   Red now falls to a lead-only carry at about L95. A run whose lead can't
+   carry needs bench training (Gen 2 overworld party reorder plus a
+   switch-training grind).
+5. Add E4/Lance/Kanto-leader/Red rosters to `gsChallengeSpecs` (they are in
+   pret `data/trainers/parties.asm`), but only together with item 4. A
+   profile sets a readiness ceiling (top level + 5; Red: 86), and lead-only
+   recovery stops there. The Gold replay needed an L95 lead to beat Red.
+6. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right
    on the first finished Gen 2 full-game run.
-6. Phone rematches as a capability (#2660). Optional for the story.
+7. Phone rematches as a capability (#2660). Optional for the story.
 
 ## Local chain replays
 
@@ -141,3 +144,7 @@ losses in a chain are not proof that a live run would lose.
   S.S. Aqua to Red's room (stationary and off-screen NPCs, big sprites,
   teleporter proofs, seam re-entry, bicycle gates, the Power Plant channel,
   wrong stand tiles). Red is the remaining gap (team strength).
+- 2026-11-24 (Red): lead training to L100 at Silver Cave, Kanto healing,
+  Indigo restock before Red, and in-battle revive of a fainted carry. Red is
+  beaten on the local Gold chain. Every mandatory story step from the Radio
+  Tower checkpoint to Red now passes on retail Gold in local replays.

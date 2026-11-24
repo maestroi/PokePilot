@@ -110,6 +110,9 @@ func executeGSMtSilverRed(m *emu.Emu, romData []byte) error {
 		return fmt.Errorf("%w: Red approach resumed from an unknown scripted map %#04x",
 			errGSSecondBadgeUnexpectedState, world.NativeMapID)
 	}
+	if err := gsRedPrepare(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Red: prepare: %w", err)
+	}
 	if err := gsSecondBadgeFaceFrom(m, romData, profile,
 		skill.ExactNativeDestination(room, gsRedStandX, gsRedStandY),
 		gsRedX, gsRedY, "kanto:mt-silver:red"); err != nil {
@@ -118,4 +121,24 @@ func executeGSMtSilverRed(m *emu.Emu, romData []byte) error {
 	m.StepFrames(gsLakeScriptSettleFrames)
 	m.Tap(emu.A, 3, 7)
 	return gsRedBattleAndEnding(m, profile, room)
+}
+
+// gsRedPrepare restocks at the Indigo Plateau Mart when the League medicine
+// stock is short and affordable (Kanto battles drain it; a real Gold chain
+// reached Red with three Revives and nothing else), then heals. Red's L73-81
+// party one-shots an unprepared carry, and in-battle medicine needs a bag.
+func gsRedPrepare(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	if gsLeagueStockNeeded(romData, profile.DecodeInventory(m)) {
+		lobby, err := gsOpeningMapID("INDIGO_PLATEAU_POKECENTER_1F")
+		if err != nil {
+			return err
+		}
+		if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(lobby, 11, 9)); err != nil {
+			return fmt.Errorf("reach the Indigo Mart: %w", err)
+		}
+		if err := gsLeagueStockAtIndigo(m, romData, profile); err != nil {
+			return err
+		}
+	}
+	return gsEnsurePartyRecovered(m, romData, profile)
 }

@@ -53,7 +53,7 @@ func TestGSEcruteakGymRecoveryUsesLocalCenter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := gsOwnedPokecenterID(gym)
+	got, err := gsOwnedPokecenterID(nil, gym)
 	if err != nil {
 		t.Fatal(err)
 	}

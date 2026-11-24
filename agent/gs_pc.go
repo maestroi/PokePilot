@@ -96,7 +96,7 @@ const (
 // "Access whose PC?" until up reports the chosen PC's menu. Plain text boxes
 // are the only things advanced with A.
 func gsOpenCenterPC(m *emu.Emu, romData []byte, profile *gsprofile.Profile, row int, up func() bool, what string) error {
-	center, err := gsOwnedPokecenterID(profile.DecodeOverworld(m).NativeMapID)
+	center, err := gsOwnedPokecenterID(romData, profile.DecodeOverworld(m).NativeMapID)
 	if err != nil {
 		return err
 	}

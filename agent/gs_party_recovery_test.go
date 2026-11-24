@@ -21,7 +21,7 @@ func TestGSPokecenterCounterMatchesROMGrid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := gsrom.NewWorldProvider(romData)
+	provider, err := gsrom.NewRuntimeWorldProvider(romData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestGSOwnedPokecenterPrefersSameMapGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := gsOwnedPokecenterID(azaleaGym)
+	got, err := gsOwnedPokecenterID(nil, azaleaGym)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestGSOwnedPokecenterPrefersSameMapGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err = gsOwnedPokecenterID(violet)
+	got, err = gsOwnedPokecenterID(nil, violet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestGSOwnedPokecenterIsNearestNotFirstInGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := gsOwnedPokecenterID(route37)
+	got, err := gsOwnedPokecenterID(nil, route37)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestGSCoastalRecoveryPrefersReachableNearbyCenters(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := gsOwnedPokecenterID(from)
+			got, err := gsOwnedPokecenterID(nil, from)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -43,7 +43,7 @@ func TestGSOlivineCianwoodOwnedNavigationCorridor(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		local, err := gsOwnedPokecenterID(source)
+		local, err := gsOwnedPokecenterID(nil, source)
 		if err != nil || local != source {
 			t.Fatalf("%s must have local center; got %#04x err %v", name, local, err)
 		}

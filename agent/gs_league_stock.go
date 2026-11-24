@@ -96,3 +96,18 @@ func gsLeagueStockAtIndigo(m *emu.Emu, romData []byte, profile *gsprofile.Profil
 	}
 	return nil
 }
+
+// gsLeagueStockNeeded reports whether any Indigo stock item is short and
+// affordable above the money reserve, so a trip to the Mart buys something.
+func gsLeagueStockNeeded(romData []byte, inv game.InventoryState) bool {
+	for _, stock := range gsLeagueIndigoStock {
+		if gsLeagueStockShortfall(inv, stock.item, stock.target) <= 0 {
+			continue
+		}
+		attr, err := gsrom.LookupItem(romData, stock.item)
+		if err == nil && attr.Price > 0 && int(inv.Money)-gsLeagueMoneyReserve >= int(attr.Price) {
+			return true
+		}
+	}
+	return false
+}
