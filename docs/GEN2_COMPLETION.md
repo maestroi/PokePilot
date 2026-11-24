@@ -105,8 +105,10 @@ state files.
    Red now falls to a lead-only carry at about L95. A run whose lead can't
    carry needs bench training (Gen 2 overworld party reorder plus a
    switch-training grind).
-5. Add E4/Lance/Kanto-leader/Red rosters to `gsChallengeSpecs` so losses
-   record quantified readiness targets instead of the legacy +5 levels.
+5. Add E4/Lance/Kanto-leader/Red rosters to `gsChallengeSpecs` (they are in
+   pret `data/trainers/parties.asm`), but only together with item 4. A
+   profile sets a readiness ceiling (top level + 5; Red: 86), and lead-only
+   recovery stops there. The Gold replay needed an L95 lead to beat Red.
 6. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right
    on the first finished Gen 2 full-game run.
 7. Phone rematches as a capability (#2660). Optional for the story.
