@@ -106,8 +106,8 @@ func TestMCPStartRunAcceptsGen2(t *testing.T) {
 	if queued.Game != "pokemon-gold" || queued.Planner != "llm" || queued.Starter != "cyndaquil" {
 		t.Fatalf("Gold queued spec = %+v", queued)
 	}
-	if queued.Goal.String() != "Play through the current supported Gen 2 frontier." {
-		t.Fatalf("Gold default goal = %q, want supported frontier", queued.Goal.String())
+	if queued.Goal.String() != "progress:gs_mt_silver_red_defeated" {
+		t.Fatalf("Gold default goal = %q, want full game (defeat Red)", queued.Goal.String())
 	}
 }
 

@@ -1,5 +1,6 @@
 import type { DashboardRun } from '../shared/api/types'
 import type { FullE2EOutput, FullE2EStage } from './fullProduction'
+import { GEN2_FULL_GAME_GOAL } from './newRunMode.ts'
 
 export const E2E_HISTORY_KEY = 'pokepilot.operator.full-e2e.v1'
 export type E2EHistoryState = 'working' | 'interrupted' | 'passed' | 'failed'
@@ -76,6 +77,10 @@ export function writeE2EHistory(entries: E2EHistoryEntry[]): void {
 }
 
 export function isFullCampaignSource(run: Pick<DashboardRun, 'run_id' | 'game' | 'goal'>): boolean {
+  if (run.game === 'pokemon-gold' || run.game === 'pokemon-silver') {
+    return ('purpose' in run && run.purpose === 'full_e2e') || run.run_id.startsWith('e2e-') ||
+      (run.goal || '').trim().toLowerCase() === GEN2_FULL_GAME_GOAL
+  }
   return run.game === 'pokemon-red' &&
     (('purpose' in run && run.purpose === 'full_e2e') ||
     run.run_id.startsWith('e2e-') || ['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion'].includes((run.goal || '').trim().toLowerCase()))

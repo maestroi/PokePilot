@@ -575,7 +575,8 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		}
 	} else if planner == "llm" && goal == "" {
 		if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
-			goal = "Play through the current supported Gen 2 frontier."
+			// Full game: Gold/Silver end at Red on Mt. Silver, not Hall of Fame.
+			goal = "progress:gs_mt_silver_red_defeated"
 		} else {
 			goal = "Earn the Boulder Badge."
 		}

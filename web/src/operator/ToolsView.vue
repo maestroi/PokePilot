@@ -9,7 +9,7 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
-import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
+import { GEN2_FULL_GAME_GOAL, fullGameGoal, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
 import { operatorHref } from '../shared/urls'
 
 const launchDefaults = readRunLaunchDefaults()
@@ -161,7 +161,7 @@ watch(runMode, mode => {
       runMode.value = 'standard'
       return
     }
-    form.goal = FULL_E2E_GOAL
+    form.goal = fullGameGoal(form.game)!
     form.recovery_profile = 'resilient'
     form.endless = false
     form.random_seed = false
@@ -213,14 +213,14 @@ watch(() => form.game, (game, previous) => {
   }
   if (game === 'pokemon-gold' || game === 'pokemon-silver') {
     form.planner = 'llm'
-    form.goal = 'Play through the current supported Gen 2 frontier.'
+    form.goal = GEN2_FULL_GAME_GOAL
   } else if (previous === 'pokemon-gold' || previous === 'pokemon-silver') {
     form.goal = defaultGoalForPlayStyle('adventure')
   }
 })
 
 const gen2Goals = [
-  ['Play through the current supported Gen 2 frontier.', 'Current frontier · Mineral Badge / Jasmine'],
+  [GEN2_FULL_GAME_GOAL, 'Full game · 16 badges + Red on Mt. Silver · experimental'],
   ['Earn 1 badge.', '1 badge · Zephyr · Falkner'],
   ['Earn 2 badges.', '2 badges · Hive · Bugsy'],
   ['Earn 3 badges.', '3 badges · Plain · Whitney'],
@@ -235,10 +235,18 @@ const gen2Goals = [
   ['elite-four', 'Hall of Fame · 8 Johto badges + Elite Four & Champion · experimental'],
   ['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'],
   ['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'],
+  // Kanto badges in the order the Gen2 controller earns them.
   ['progress:gs_kanto_thunder_badge_earned', 'Thunder Badge · Lt. Surge · Kanto · experimental'],
+  ['progress:gs_kanto_marsh_badge_earned', 'Marsh Badge · Sabrina · Kanto · experimental'],
+  ['progress:gs_kanto_rainbow_badge_earned', 'Rainbow Badge · Erika · Kanto · experimental'],
+  ['progress:gs_kanto_soul_badge_earned', 'Soul Badge · Janine · Kanto · experimental'],
   ['progress:gs_kanto_rail_pass_received', 'Magnet Train PASS · Copycat · Kanto · experimental'],
-  ['progress:gs_kanto_all_badges_earned', 'All 8 Kanto badges · through Blue · experimental'],
-  ['progress:gs_mt_silver_red_defeated', 'Defeat Red · Mt. Silver · experimental'],
+  ['progress:gs_kanto_cascade_badge_earned', 'Cascade Badge · Misty · Kanto · experimental'],
+  ['progress:gs_kanto_boulder_badge_earned', 'Boulder Badge · Brock · Kanto · experimental'],
+  ['progress:gs_kanto_volcano_badge_earned', 'Volcano Badge · Blaine · Kanto · experimental'],
+  ['progress:gs_kanto_earth_badge_earned', 'Earth Badge · Blue · Kanto · experimental'],
+  ['Earn 16 badges.', 'All 16 badges · Johto + Kanto · experimental'],
+  ['Play through the current supported Gen 2 frontier.', 'Legacy preset · stops at Mineral Badge'],
   ['', 'Free play · no automatic stop']
 ] as const
 
@@ -290,7 +298,7 @@ async function submit(): Promise<void> {
   }
 
   if (fullE2ESelected.value && !supportsFullE2E(form)) {
-    error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
+    error.value = 'Full E2E supports Pokémon Red, Gold or Silver with the LLM planner.'
     return
   }
   if (fullE2ESelected.value && uploadPrivate.value && !uploadAcknowledged.value) {
@@ -373,7 +381,7 @@ async function submit(): Promise<void> {
               <option value="full-e2e" :disabled="!supportsFullE2E(form)">Full E2E · complete game → episode + Short</option>
             </select>
           </label>
-          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E currently requires Pokémon Red and the LLM planner.</p>
+          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E requires Pokémon Red, Gold or Silver and the LLM planner.</p>
           <template v-if="fullE2ESelected">
             <p class="mt-2 text-xs text-slate-300">
               The goal is locked to the Champion. When the run finishes, the server automatically verifies the Hall of Fame, renders a broadcast replay and both edited formats, and queues private publication candidates.
@@ -460,7 +468,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges, or Hall of Fame for the full Johto League challenge. Will, Koga, Bruno, Karen, and Lance are automatic internal stages, not separate run goals. Only cartridge-observed badge and Hall of Fame events count as success. The Hall of Fame path is still experimental; the legacy supported-frontier preset stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Full game ends only when Red on Mt. Silver is defeated; Hall of Fame is the Johto League, not completion. Will, Koga, Bruno, Karen, and Lance are automatic internal stages, not separate run goals. Only cartridge-observed badge, Hall of Fame and Red events count as success. Post-Hall-of-Fame stages are experimental until a live run verifies them; the legacy supported-frontier preset stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">

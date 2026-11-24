@@ -819,6 +819,7 @@ func profilePlayerSnapshot(obs game.ProfileObservation) *farm.Player {
 	p := &farm.Player{
 		Money:       obs.Money,
 		Badges:      append([]string(nil), obs.Badges...),
+		Milestones:  append([]string(nil), obs.Milestones...),
 		Party:       make([]farm.PartyMon, 0, len(obs.Party)),
 		BagUsed:     len(obs.Bag),
 		BagCapacity: obs.BagCapacity,

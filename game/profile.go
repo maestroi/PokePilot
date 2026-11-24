@@ -229,6 +229,9 @@ type ProfileObservation struct {
 	Bag          []ProfileItem
 	BagCapacity  int
 	Badges       []string
+	// Milestones are adapter-owned display labels for completed major story
+	// beats (badges stay on Badges). Telemetry only; never planner input.
+	Milestones   []string
 	Money        uint32
 	RespawnPlace PlaceID
 	PokedexTotal int

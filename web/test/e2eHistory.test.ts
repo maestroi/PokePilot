@@ -59,6 +59,9 @@ test('cross-browser source discovery does not falsely classify regular games as 
   assert.equal(isFullCampaignSource(champion({ goal: 'Earn all 8 badges.' })), false)
   assert.equal(isFullCampaignSource(champion({ game: 'pokemon-gold' })), false)
   assert.equal(isFullCampaignSource(champion({ run_id: 'e2e-old-123', goal: '' })), true)
+  // Gold/Silver full campaigns end at Red, not the Hall of Fame.
+  assert.equal(isFullCampaignSource(champion({ game: 'pokemon-silver', goal: 'progress:gs_mt_silver_red_defeated' })), true)
+  assert.equal(isFullCampaignSource(champion({ game: 'pokemon-gold', goal: 'Earn 8 badges.' })), false)
 })
 
 test('server status is not overwritten by a stale browser receipt', () => {

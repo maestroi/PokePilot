@@ -27,6 +27,8 @@ function isSpeedrun(run: SpectatorRun): boolean {
   }
 }
 
+const GEN2_FULL_GAME_GOAL = 'progress:gs_mt_silver_red_defeated'
+
 function isLeagueCompletionGoal(run: SpectatorRun): boolean {
   const goal = (run.goal || '').trim().toLowerCase()
   // A selected structured goal wins over play-style heuristics. Gen2's
@@ -73,6 +75,17 @@ export function goalProgressMeta(run: SpectatorRun): GoalProgressMeta {
       detail: badges >= 8
         ? 'Next: Elite Four, Champion & Hall of Fame'
         : 'Full-game goal in progress',
+      complete: false
+    }
+  }
+
+  // Gold/Silver full game: 16 badges, then Red. The cartridge goal itself is
+  // a single event, so show badge progress and keep the end for Red.
+  if ((run.goal || '').trim().toLowerCase() === GEN2_FULL_GAME_GOAL) {
+    return {
+      percent: Math.min(94, (Math.min(16, badges) / 16) * 94),
+      label: `${badges}/16 badges earned`,
+      detail: badges >= 16 ? 'Next: Red on Mt. Silver' : 'Full-game goal in progress',
       complete: false
     }
   }
