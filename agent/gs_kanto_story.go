@@ -62,6 +62,9 @@ func executeGSKantoPowerManager(m *emu.Emu, romData []byte) error {
 	if err != nil || done {
 		return err
 	}
+	if err := gsKantoSurfToPowerPlant(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 %s: %w", label, err)
+	}
 	return gsKantoStoryTalk(m, romData, profile, gsprofile.ProgressKantoManagerMet,
 		"POWER_PLANT", 14, 11, 14, 10, label)
 }
@@ -124,6 +127,9 @@ func executeGSKantoRestorePower(m *emu.Emu, romData []byte) error {
 	}
 	// PowerPlantManager.takeitem MACHINE_PART sets RETURNED_MACHINE_PART
 	// and RESTORED_POWER_TO_KANTO. The profile requires both flags.
+	if err := gsKantoSurfToPowerPlant(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 %s: %w", label, err)
+	}
 	return gsKantoStoryTalk(m, romData, profile, gsprofile.ProgressKantoPowerRestored,
 		"POWER_PLANT", 14, 11, 14, 10, label)
 }
@@ -176,4 +182,46 @@ func executeGSKantoInviteBlue(m *emu.Emu, romData []byte) error {
 	}
 	return gsKantoStoryTalk(m, romData, profile, gsprofile.ProgressKantoBlueInvited,
 		"CINNABAR_ISLAND", 9, 7, 9, 6, label)
+}
+
+// gsKantoSurfToPowerPlant starts the only retail approach to the Power
+// Plant: its door strip on Route 10 North is ringed by water whose only
+// opening is the channel from Route 9's lake (Route 10 North columns 16-17,
+// walled on that map). Route 9 must be entered from Cerulean: its south
+// seam from Route 10 North lands in a pocket cut off from the lake shore,
+// and seam entries cannot tell those landings apart. Surf onto the lake at
+// (50,3), then down the channel to (56,16), so the crossing into Route 10
+// North is the water one and routing lands beside the door.
+func gsKantoSurfToPowerPlant(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	plant, err := gsOpeningMapID("POWER_PLANT")
+	if err != nil {
+		return err
+	}
+	if profile.DecodeOverworld(m).NativeMapID == plant {
+		return nil
+	}
+	if err := gsKantoRestoreRegion(m, romData, profile); err != nil {
+		return fmt.Errorf("restore Kanto region: %w", err)
+	}
+	for _, hop := range []struct {
+		mapName string
+		x, y    uint8
+		why     string
+	}{
+		{"CERULEAN_CITY", 38, 22, "enter Route 9 from Cerulean"},
+		// The shore first: Route 9 (5,8) is a Cut tree, and one local
+		// plan cannot chain Cut and then Surf.
+		{"ROUTE_9", 50, 4, "reach the Route 9 lake shore"},
+		{"ROUTE_9", 50, 3, "surf onto the Route 9 lake"},
+		{"ROUTE_9", 56, 16, "surf down the Power Plant channel"},
+	} {
+		id, err := gsOpeningMapID(hop.mapName)
+		if err != nil {
+			return err
+		}
+		if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(id, hop.x, hop.y)); err != nil {
+			return fmt.Errorf("%s: %w", hop.why, err)
+		}
+	}
+	return nil
 }

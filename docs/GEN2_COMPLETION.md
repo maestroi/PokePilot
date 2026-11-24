@@ -28,12 +28,12 @@ bit or key item, and an `agent/gs_*.go` controller. Offers live in
 | Radio Tower takeover, Underground, Ice Path, Clair, Dragon's Den, Rising (8) | verified-live | operator-confirmed 8-badge runs |
 | Victory Road → Indigo Plateau | verified-live (once) | run-3om7ptfumukt9aaxwusxdq9sj, after a blackout retry |
 | Elite Four Will → Karen, Lance, Hall of Fame | verified-replay (local, Gold) | 2026-11-24: from run-zzrclw1r60a8g's real Radio Tower checkpoint (#2928), the League reset, Will, Koga, Bruno, Karen, Lance and the Hall of Fame all passed on retail Gold; ends in New Bark Town. Needed in-battle medicine and the Champion aftermath fix (see Systems). Silver not replayed |
-| S.S. Ticket, S.S. Aqua first landing | implemented | Kanto capture/replay harness exists |
-| Kanto: Surge, Sabrina, Erika, Janine | implemented | |
-| Power Plant: manager, Cerulean Rocket, Machine Part, restore | verified-replay | #2945 |
-| Copycat, Lost Doll, Magnet Train Pass, Misty date, Cascade | verified-replay | #2945 |
-| Radio Card, EXPN Card, Snorlax, Brock, Blaine, Blue invite, Earth | verified-replay | #2947 |
-| Oak's Mt. Silver permit, Red | verified-replay | #2947; Red is proven by the disappearance event |
+| S.S. Ticket, S.S. Aqua first landing | verified-replay (local, Gold) | 2026-11-24 chain from the post-Hall-of-Fame state; needed the ROM routing below plus ship fixes (boarding prompt, B1F east ladder, ROM-checked stand tiles) |
+| Kanto: Surge, Sabrina, Erika, Janine | verified-replay (local, Gold) | Same chain. Needed Saffron Gym teleporter proofs, the Cycling Road bicycle barrier, off-screen NPC blockers and Janine's stand tile (1,9) |
+| Power Plant: manager, Cerulean Rocket, Machine Part, restore | in progress | Route needs Surf via the Route 9 lake channel (`gsKantoSurfToPowerPlant`). #2945 only added replay selectors; it never ran them |
+| Copycat, Lost Doll, Magnet Train Pass, Misty date, Cascade | implemented, unverified | #2945 added selectors only |
+| Radio Card, EXPN Card, Snorlax, Brock, Blaine, Blue invite, Earth | implemented, unverified | #2947 added selectors only |
+| Oak's Mt. Silver permit, Red | implemented, unverified | #2947; Red is proven by the disappearance event |
 
 No unimplemented mandatory story milestone is known. **No full fresh-save →
 Red run has been observed.** Do not call Gen 2 verified until one has.
@@ -45,6 +45,8 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | RAM decode: party, bag (all pockets), badges (Johto+Kanto), money, dex, map, RTC/time of day | implemented, used live | `gs/profile`, `gs/sym` |
 | Event flags / story facts | implemented | `gs/profile/progression.go` |
 | Native world graph, warps, connections, collision (incl. ice, pits, whirlpool, waterfall) | implemented | `gs/rom`, `web/src/shared/gen2WorldManifest.generated.ts` |
+| Post-League routing topology | verified-replay (local, Gold) through Janine | `gs/rom/world_runtime.go`: hand slice + ROM headers/collision for Kanto, ports, Fast Ship, Magnet Train, Route 28, Mt. Silver. Before 2026-11-24 routing had no Kanto maps at all |
+| Routing blockers | implemented | stationary NPCs (incl. off-screen `wMapObjects`) and profile script barriers (Cycling Road gates without a BICYCLE) are durable; same-map teleporter maps get reachability proofs |
 | Field moves Cut/Surf/Strength/Flash/Fly/Whirlpool/Waterfall/Rock Smash + teaching carrier | implemented | `agent/gs_field_carrier.go`, `gs_surf.go`, `gs_pit_puzzles.go` |
 | Healing (nearest native Center), lead training after a combat loss | implemented | `gs_party_recovery.go`, `gs_combat_recovery.go` |
 | Trainer/gym/scripted battles | implemented | shared battle driver + Gen 2 decoders |
