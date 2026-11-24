@@ -201,3 +201,20 @@ func TestDecodeGen2LiveObjectsProjectsOffscreenStandingNPCs(t *testing.T) {
 		t.Fatalf("objects = %+v, want only the off-screen standing NPC", objects)
 	}
 }
+
+// BIGDOLL objects (Vermilion's Snorlax) collide as a 2x2 square.
+func TestDecodeGen2LiveObjectsBigDollBlocksTwoByTwo(t *testing.T) {
+	var mem fakeMemory
+	base := sym.MapObjects + uint16(1*sym.MapObjectLen)
+	mem[base], mem[base+1], mem[base+2], mem[base+3], mem[base+4] = 0xff, 0x40, 8+4, 34+4, 0x15
+	objects, _ := decodeGen2LiveObjects(&mem)
+	got := map[[2]int]bool{}
+	for _, o := range objects {
+		got[[2]int{o.X, o.Y}] = o.Stationary
+	}
+	for _, at := range [][2]int{{34, 8}, {35, 8}, {34, 9}, {35, 9}} {
+		if !got[at] {
+			t.Fatalf("big doll tiles = %v, missing stationary %v", got, at)
+		}
+	}
+}

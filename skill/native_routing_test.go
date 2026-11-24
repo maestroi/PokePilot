@@ -699,3 +699,29 @@ func TestNativeDurableBlockersKeepStationaryNPCs(t *testing.T) {
 		t.Fatalf("durable blockers = %v; want warp + stationary NPC only", got)
 	}
 }
+
+// Vermilion's shape: a wall row splits the map. The north seam lands in the
+// goal's half, the east seam only in the pocket, so only the north seam is
+// a good entry for re-routing.
+func TestNativeSeamReachesOnlyFromLandingsInTheGoalComponent(t *testing.T) {
+	const w, h = 4, 5
+	walk := make([]bool, w*h)
+	for i := range walk {
+		walk[i] = i/w != 2 // row 2 is a wall
+	}
+	grid := nativeTestGrid(t, w, h, walk)
+	const city, route6, route11 = 0x0c03, 0x0c01, 0x0c02
+	provider := nativeConnectionGridProvider{headers: nativeConnectionTestProvider{
+		route6:  {ID: route6, WidthBlocks: 2, HeightBlocks: 2},
+		route11: {ID: route11, WidthBlocks: 2, HeightBlocks: 1}, // rows 0-1 only
+	}}
+	goal := NativeDestination{Map: city, X: 1, Y: 1}
+	north := world.NativeEdge{Kind: world.EdgeConnection, From: route6, To: city, Dir: 1}             // south from Route 6
+	east := world.NativeEdge{Kind: world.EdgeConnection, From: route11, To: city, Dir: 2, Offset: -2} // west from Route 11, rows 4+
+	if !nativeSeamReaches(provider, grid, north, nil, goal) {
+		t.Fatal("north seam lands beside the goal")
+	}
+	if nativeSeamReaches(provider, grid, east, nil, goal) {
+		t.Fatal("east seam lands only in the walled-off pocket")
+	}
+}

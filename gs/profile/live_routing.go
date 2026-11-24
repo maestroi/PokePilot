@@ -78,6 +78,24 @@ const (
 var gen2StationaryMovement = map[byte]bool{
 	0x01: true, 0x06: true, 0x07: true, 0x08: true, 0x09: true,
 	0x03: true, 0x0a: true, 0x1e: true, 0x1f: true,
+	0x15: true, 0x20: true, 0x21: true, // big dolls (Snorlax)
+}
+
+// gen2BigDollMovement are the BIGDOLL* movement types (Vermilion's sleeping
+// Snorlax). Their sprite data sets the big-object flag, so the engine's
+// collision covers a 2x2 square anchored at the object's tile.
+var gen2BigDollMovement = map[byte]bool{0x15: true, 0x20: true, 0x21: true}
+
+// gen2BigObjectTiles returns the three extra tiles a big object occupies.
+func gen2BigObjectTiles(slot, x, y int, movement byte) []game.LiveMapObject {
+	if !gen2BigDollMovement[movement] {
+		return nil
+	}
+	return []game.LiveMapObject{
+		{Slot: slot, X: x + 1, Y: y, Stationary: true},
+		{Slot: slot, X: x, Y: y + 1, Stationary: true},
+		{Slot: slot, X: x + 1, Y: y + 1, Stationary: true},
+	}
 }
 
 func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[int]game.MapPoint) {
@@ -109,6 +127,7 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 			Pushable:   reader.Peek8(base) == gen2SpriteBoulder && movement == gen2StrengthBoulderMovement,
 			Stationary: gen2StationaryMovement[movement],
 		})
+		objects = append(objects, gen2BigObjectTiles(slot, x, y, movement)...)
 		positions[slot] = game.MapPoint{X: x, Y: y}
 	}
 	// Object structs exist only for objects near the screen. A standing NPC
@@ -126,7 +145,9 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 		if rawX < 4 || rawY < 4 {
 			continue
 		}
+		movement := reader.Peek8(base + 4)
 		objects = append(objects, game.LiveMapObject{Slot: i, X: int(rawX) - 4, Y: int(rawY) - 4, Stationary: true})
+		objects = append(objects, gen2BigObjectTiles(i, int(rawX)-4, int(rawY)-4, movement)...)
 	}
 	return objects, positions
 }

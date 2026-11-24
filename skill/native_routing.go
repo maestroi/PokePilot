@@ -1141,7 +1141,7 @@ func traverseNativeEdge(
 // standing on dest.Map so the live blocks describe the map being reasoned
 // about. Connection entries are not considered: their landing is a band, not a
 // tile.
-func nativeEntriesReaching(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, dest NativeDestination) (map[int]bool, error) {
+func nativeEntriesReaching(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, graph *world.NativeGraph, dest NativeDestination) (map[int]bool, error) {
 	grid, live, header, err := nativeLiveGrid(m, profile, provider, dest.Map)
 	if err != nil {
 		return nil, err
@@ -1160,7 +1160,51 @@ func nativeEntriesReaching(m *emu.Emu, profile nativeRoutingProfile, provider wo
 			entries[i] = true
 		}
 	}
+	// Map seams are entries too (Vermilion from Route 6 lands in the city,
+	// from Route 11 in the pocket north of Snorlax). A seam entry is good when
+	// one of its landing tiles reaches the goal.
+	if graph != nil {
+		for _, edges := range graph.Edges {
+			for _, e := range edges {
+				if e.To != dest.Map || e.Kind != world.EdgeConnection || entries[e.Entry()] {
+					continue
+				}
+				if nativeSeamReaches(provider, grid, e, blocked, dest) {
+					entries[e.Entry()] = true
+				}
+			}
+		}
+	}
 	return entries, nil
+}
+
+// nativeSeamReaches reports whether any tile the seam edge e lands on can
+// walk to dest. Landings follow nativeConnectionApproach: source index i
+// lands on neighbour index i - 2*Offset.
+func nativeSeamReaches(provider worldmodel.NativeGridProvider, grid *world.NativeGrid, e world.NativeEdge,
+	blocked map[[2]int]bool, dest NativeDestination) bool {
+	src, err := provider.ParseMap(e.From)
+	if err != nil {
+		return false
+	}
+	limit, destLimit := int(src.WidthBlocks)*2, grid.Width
+	if e.Dir == 2 || e.Dir == 3 {
+		limit, destLimit = int(src.HeightBlocks)*2, grid.Height
+	}
+	for i := 0; i < limit; i++ {
+		j := i - 2*int(e.Offset)
+		if j < 0 || j >= destLimit {
+			continue
+		}
+		lx, ly := nativeConnectionLandingTile(e, j, grid.Width, grid.Height)
+		if !grid.Walkable(lx, ly) || blocked[[2]int{lx, ly}] {
+			continue
+		}
+		if _, err := world.FindNativePath(grid, lx, ly, int(dest.X), int(dest.Y), blocked); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // GoToNative executes map and tile routing through the wide-id native graph.
@@ -1332,7 +1376,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 			// The goal tile is in another walkable component of this map
 			// (Burned Tower B1F is separate pockets joined only through 1F
 			// pits). Leave and re-enter through a warp whose landing reaches it.
-			entries, entriesErr := nativeEntriesReaching(m, profile, provider, dest)
+			entries, entriesErr := nativeEntriesReaching(m, profile, provider, graph, dest)
 			if entriesErr != nil || len(entries) == 0 {
 				return walkErr
 			}
@@ -1349,7 +1393,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 
 		var accept func(world.NativeEdge) bool
 		if goodEntries != nil {
-			accept = func(e world.NativeEdge) bool { return e.Kind == world.EdgeWarp && goodEntries[e.Entry()] }
+			accept = func(e world.NativeEdge) bool { return goodEntries[e.Entry()] }
 		}
 		nativeProveTeleporterMap(m, profile, provider, graph, state, mem)
 		route, routeErr := world.FindNativeRouteToEntry(graph, state.NativeMapID, mem.entry, dest.Map, accept, mem.unreachable)
