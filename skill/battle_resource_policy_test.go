@@ -218,3 +218,47 @@ func TestSacrificialBenchHealRequiresCriticalBenchHP(t *testing.T) {
 		t.Fatalf("sacrificial bench heal = %+v, true; want target above critical HP left alone", choice)
 	}
 }
+
+// A fainted, much stronger carry (Meganium one-shot by Red's Charizard) is
+// revived while a weak bench mon holds the field.
+func TestSacrificialTurnRevivesFaintedCarry(t *testing.T) {
+	strategy := &fakeGen2CombatStrategy{scores: map[uint16]int64{1: 100, 2: 1000}}
+	resources := game.BattleResourcesState{
+		InBattle:   true,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{NativeSpeciesID: 1, Level: 17, HP: 60, MaxHP: 60, Moves: [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 10}}},
+			{NativeSpeciesID: 2, Level: 95, HP: 0, MaxHP: 322, Moves: [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}}},
+		},
+		Bag:       []game.InventoryItem{{NativeItemID: 0x35, Quantity: 1}},
+		Medicines: gen1.Medicines,
+	}
+	battle := game.BattleState{ActiveLevel: 17, ActiveHP: 60, ActiveMaxHP: 60, EnemyLevel: 77, EnemyHP: 200, EnemyMaxHP: 200,
+		Moves: [4]game.BattleMove{{ID: 1, PP: 10}}}
+	choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle)
+	if !ok || choice.Item != 0x35 || choice.Slot != 1 {
+		t.Fatalf("choice = %+v,%v; want REVIVE on the fainted carry", choice, ok)
+	}
+	resources.Bag = nil
+	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
+		t.Fatalf("no revive in the bag chose %+v", choice)
+	}
+}
+
+func TestSacrificialReviveSkipsUnderleveledBench(t *testing.T) {
+	strategy := &fakeGen2CombatStrategy{scores: map[uint16]int64{1: 100, 2: 1000}}
+	resources := game.BattleResourcesState{
+		InBattle: true, ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{NativeSpeciesID: 1, Level: 5, HP: 19, MaxHP: 19, Moves: [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 10}}},
+			{NativeSpeciesID: 2, Level: 17, HP: 0, MaxHP: 60, Moves: [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}}},
+		},
+		Bag:       []game.InventoryItem{{NativeItemID: 0x35, Quantity: 1}},
+		Medicines: gen1.Medicines,
+	}
+	battle := game.BattleState{ActiveLevel: 5, ActiveHP: 19, ActiveMaxHP: 19, EnemyLevel: 77, EnemyHP: 200, EnemyMaxHP: 200,
+		Moves: [4]game.BattleMove{{ID: 1, PP: 10}}}
+	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
+		t.Fatalf("revived an underleveled bench mon: %+v", choice)
+	}
+}

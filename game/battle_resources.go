@@ -71,6 +71,9 @@ type Medicine struct {
 	NativeItemID uint16
 	HP           int
 	Cures        string
+	// RevivePercent is the share of max HP a fainted mon returns with
+	// (Revive 50, Max Revive 100); zero means the item cannot revive.
+	RevivePercent int
 }
 
 // CuresStatus reports whether m cures the portable status name.

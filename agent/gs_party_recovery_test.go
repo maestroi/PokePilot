@@ -21,7 +21,7 @@ func TestGSPokecenterCounterMatchesROMGrid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := gsrom.NewWorldProvider(romData)
+	provider, err := gsrom.NewRuntimeWorldProvider(romData)
 	if err != nil {
 		t.Fatal(err)
 	}
