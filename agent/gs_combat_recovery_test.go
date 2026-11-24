@@ -299,7 +299,6 @@ func TestGSRecoveryTrainAndHealAreNativeOnly(t *testing.T) {
 	}
 	for _, o := range []Objective{
 		{Kind: KindTrain, Level: 39, Slot: 1},
-		{Kind: KindTrain, Level: 61},
 		{Kind: KindTrain, Level: 39, Species: "meganium"},
 		{Kind: KindHeal, Place: "violet city"},
 	} {

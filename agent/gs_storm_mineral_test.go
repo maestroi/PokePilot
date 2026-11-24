@@ -58,7 +58,7 @@ func TestGSCoastalGymsAreOwnedWithLocalHealing(t *testing.T) {
 			t.Fatalf("coastal gym ownership %s=%v center %s=%v",
 				tc.gym, gsSecondBadgeOwnedMap(gym), tc.center, gsSecondBadgeOwnedMap(center))
 		}
-		local, err := gsOwnedPokecenterID(city)
+		local, err := gsOwnedPokecenterID(nil, city)
 		if err != nil || local != center {
 			t.Fatalf("%s center = %#04x (%v), want %#04x", tc.city, local, err, center)
 		}

@@ -43,10 +43,23 @@ var gsOwnedPokecenterNames = []string{
 	"OLIVINE_POKECENTER_1F",
 	"CIANWOOD_POKECENTER_1F",
 	"MAHOGANY_POKECENTER_1F",
+	"BLACKTHORN_POKECENTER_1F",
+	// Post-League: same 1F layout (nurse at (3,1) in every pret map).
+	"VIRIDIAN_POKECENTER_1F",
+	"PEWTER_POKECENTER_1F",
+	"CERULEAN_POKECENTER_1F",
+	"ROUTE_10_POKECENTER_1F",
+	"LAVENDER_POKECENTER_1F",
+	"VERMILION_POKECENTER_1F",
+	"CELADON_POKECENTER_1F",
+	"SAFFRON_POKECENTER_1F",
+	"FUCHSIA_POKECENTER_1F",
+	"CINNABAR_POKECENTER_1F",
+	"SILVER_CAVE_POKECENTER_1F",
 }
 
-func gsOwnedPokecenterID(from uint16) (uint16, error) {
-	if id, ok := gsNearestOwnedPokecenter(from); ok {
+func gsOwnedPokecenterID(romData []byte, from uint16) (uint16, error) {
+	if id, ok := gsNearestOwnedPokecenter(romData, from); ok {
 		return id, nil
 	}
 	fromInfo, fromOK := gsdata.Map(from)
@@ -74,9 +87,11 @@ func gsOwnedPokecenterID(from uint16) (uint16, error) {
 // gsNearestOwnedPokecenter walks the static Johto topology breadth-first, so
 // a route between two cities heals in the one it touches first. Map groups are
 // not distance: Route 37 shares Violet's group, and walking back through Route
-// 36 from there is not legal. Unknown maps fall back to the group heuristic.
-func gsNearestOwnedPokecenter(from uint16) (uint16, bool) {
-	adjacency, err := gsprofile.New(gsprofile.GoldGameID).MapAdjacency(nil)
+// 36 from there is not legal. With the ROM the walk covers the post-League
+// world too (Kanto heals in Kanto). Unknown maps fall back to the group
+// heuristic.
+func gsNearestOwnedPokecenter(romData []byte, from uint16) (uint16, bool) {
+	adjacency, err := gsprofile.New(gsprofile.GoldGameID).MapAdjacency(romData)
 	if err != nil {
 		return 0, false
 	}
@@ -111,7 +126,7 @@ func gsEnsurePartyRecovered(m *emu.Emu, romData []byte, profile *gsprofile.Profi
 		return nil
 	}
 	world := profile.DecodeOverworld(m)
-	pokecenter, err := gsOwnedPokecenterID(world.NativeMapID)
+	pokecenter, err := gsOwnedPokecenterID(romData, world.NativeMapID)
 	if err != nil {
 		return err
 	}

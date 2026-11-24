@@ -26,7 +26,7 @@ func TestGSLakeOfRageStoryTargetsRetailNPCAndShinyEncounter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	center, err := gsOwnedPokecenterID(from)
+	center, err := gsOwnedPokecenterID(nil, from)
 	if err != nil {
 		t.Fatal(err)
 	}
