@@ -40,7 +40,7 @@ const filled = computed(() => `${props.line.fill * 90}%`)
         <span class="dot" aria-hidden="true" />
         <span class="label">
           <b>{{ line.leagueTown }}</b>
-          Hall of Fame
+          {{ line.finale }}
           <span class="sr-only">{{ line.leagueEarned ? ', goal complete' : line.leagueNext ? ', next goal' : ', final goal' }}</span>
           <em v-if="line.leagueNext" aria-hidden="true">Next</em>
         </span>

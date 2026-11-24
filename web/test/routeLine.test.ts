@@ -108,3 +108,33 @@ test('Silver full League goal reaches the ninth step only on Hall completion', (
   assert.equal(finished.leagueEarned, true)
   assert.equal(finished.fill, 1)
 })
+
+test('Gen2 route line moves to Kanto after Hall of Fame and ends at Red', () => {
+  const johto = ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising']
+  const postgame = gameRouteLine({
+    game: 'pokemon-silver',
+    player: { badges: [...johto, 'thunder', 'marsh'], milestones: ['Champion', 'Hall of Fame'] }
+  } as never)
+  assert.equal(postgame.startTown, 'Vermilion City')
+  assert.equal(postgame.leagueTown, 'Mt. Silver')
+  assert.deepEqual(postgame.stops.map((stop) => stop.badge),
+    ['Thunder', 'Marsh', 'Rainbow', 'Soul', 'Cascade', 'Boulder', 'Volcano', 'Earth'])
+  assert.equal(postgame.earnedCount, 2)
+  // Hall of Fame alone is not game completion.
+  assert.equal(postgame.leagueEarned, false)
+  assert.equal(postgame.nextGoal, 'Rainbow Badge · Celadon')
+
+  const kanto = ['Thunder', 'Marsh', 'Rainbow', 'Soul', 'Cascade', 'Boulder', 'Volcano', 'Earth']
+  const allBadges = gameRouteLine({
+    game: 'pokemon-gold',
+    player: { badges: [...johto, ...kanto], milestones: ['Hall of Fame'] }
+  } as never)
+  assert.equal(allBadges.nextGoal, 'Mt. Silver · Red')
+  const done = gameRouteLine({
+    game: 'pokemon-gold',
+    player: { badges: [...johto, ...kanto], milestones: ['Hall of Fame', 'Red'] }
+  } as never)
+  assert.equal(done.leagueEarned, true)
+  assert.equal(done.nextGoal, 'Red defeated')
+  assert.equal(done.fill, 1)
+})

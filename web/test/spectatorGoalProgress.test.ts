@@ -142,3 +142,16 @@ test('Gen2 badge and frontier goals are not treated as League goals', () => {
   assert.equal(goalProgress(frontier), 0)
   assert.equal(goalProgressMeta(frontier).label, '0/1')
 })
+
+test('Gen2 full-game goal shows 16-badge progress and is not complete at Hall of Fame', () => {
+  const fullGame = run({
+    game: 'pokemon-gold',
+    goal: 'progress:gs_mt_silver_red_defeated',
+    player: { money: 0, badges: Array(16).fill('badge'), party: [], milestones: ['Hall of Fame'] },
+    stats: { ...run().stats!, goal_current: 0, goal_target: 1, goal_complete: false }
+  })
+  assert.equal(isGoalComplete(fullGame), false)
+  assert.equal(goalProgressMeta(fullGame).label, '16/16 badges earned')
+  assert.equal(goalProgressMeta(fullGame).detail, 'Next: Red on Mt. Silver')
+  assert.ok(goalProgress(fullGame) < 100)
+})

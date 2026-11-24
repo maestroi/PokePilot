@@ -211,6 +211,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 		game.ProgressFact{ID: ProgressKantoBadges, Complete: kanto == 0xff, Value: bits.OnesCount8(kanto)},
 	)
 
+	obs.Milestones = milestoneLabels(obs.Story)
 	obs.Bag = decodeBag(reader)
 	return obs, nil
 }

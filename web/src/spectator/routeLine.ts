@@ -10,6 +10,9 @@ interface RouteProfile {
   startTown: string
   leagueTown: string
   gyms: readonly GymStop[]
+  // The final step after the gyms and its exact milestone label.
+  finale: string
+  finaleGoals: readonly string[]
 }
 
 const KANTO_GYMS = [
@@ -34,16 +37,35 @@ const JOHTO_GYMS = [
   { badge: 'Rising', town: 'Blackthorn', color: '#6f78c9' }
 ] as const
 
+const LEAGUE_GOALS = ['elite-four', 'hall-of-fame', 'progress:gs_league_hall_of_fame'] as const
+
 const KANTO_PROFILE: RouteProfile = {
   startTown: 'Pallet Town',
   leagueTown: 'Indigo League',
-  gyms: KANTO_GYMS
+  gyms: KANTO_GYMS,
+  finale: 'Hall of Fame',
+  finaleGoals: LEAGUE_GOALS
 }
 
 const JOHTO_PROFILE: RouteProfile = {
   startTown: 'New Bark Town',
   leagueTown: 'Indigo Plateau',
-  gyms: JOHTO_GYMS
+  gyms: JOHTO_GYMS,
+  finale: 'Hall of Fame',
+  finaleGoals: LEAGUE_GOALS
+}
+
+// Gold/Silver after the Hall of Fame: Kanto badges in the order the Gen2
+// controller earns them, ending at Red. Hall of Fame is not game completion.
+const GEN2_POSTGAME_PROFILE: RouteProfile = {
+  startTown: 'Vermilion City',
+  leagueTown: 'Mt. Silver',
+  gyms: [
+    KANTO_GYMS[2], KANTO_GYMS[5], KANTO_GYMS[3], KANTO_GYMS[4],
+    KANTO_GYMS[1], KANTO_GYMS[0], KANTO_GYMS[6], KANTO_GYMS[7]
+  ],
+  finale: 'Red',
+  finaleGoals: ['progress:gs_mt_silver_red_defeated']
 }
 
 export interface RouteStop {
@@ -58,6 +80,7 @@ export interface RouteStop {
 export interface RouteLine {
   startTown: string
   leagueTown: string
+  finale: string
   stops: RouteStop[]
   earnedCount: number
   leagueEarned: boolean
@@ -77,19 +100,23 @@ function isGen2Game(game: string | undefined): boolean {
     || normalized === 'silver'
 }
 
-function profileForGame(game: string | undefined): RouteProfile {
-  return isGen2Game(game) ? JOHTO_PROFILE : KANTO_PROFILE
+function hasMilestone(run: Pick<SpectatorRun, 'player'> | null | undefined, label: string): boolean {
+  return (run?.player?.milestones || []).some((m) => String(m).trim().toLowerCase() === label.toLowerCase())
 }
 
-function leagueComplete(run: Pick<SpectatorRun, 'goal' | 'player' | 'stats'> | null | undefined): boolean {
+function profileForGame(run: Pick<SpectatorRun, 'game' | 'player'> | null | undefined): RouteProfile {
+  if (!isGen2Game(run?.game)) return KANTO_PROFILE
+  return hasMilestone(run, 'Hall of Fame') ? GEN2_POSTGAME_PROFILE : JOHTO_PROFILE
+}
+
+function leagueComplete(run: Pick<SpectatorRun, 'goal' | 'player' | 'stats'> | null | undefined, profile: RouteProfile): boolean {
   // An eight-badge or supported-frontier goal can complete without beating
   // the League. Do not turn generic goal_complete into Hall of Fame proof.
-  if ((run?.player?.milestones || []).some((m) => String(m).toLowerCase().includes('hall of fame'))) return true
+  if (hasMilestone(run, profile.finale)) return true
   const goal = String(run?.goal || '').trim().toLowerCase()
-  const leagueGoal = goal === 'elite-four' || goal === 'hall-of-fame'
-    || goal === 'progress:gs_league_hall_of_fame'
-    || /elite four|champion|hall of fame/.test(goal)
-  return Boolean(leagueGoal && run?.stats?.goal_complete)
+  const finaleGoal = profile.finaleGoals.includes(goal)
+    || (profile.finale === 'Hall of Fame' && /elite four|champion|hall of fame/.test(goal))
+  return Boolean(finaleGoal && run?.stats?.goal_complete)
 }
 
 function buildRouteLine(
@@ -108,7 +135,7 @@ function buildRouteLine(
   })
 
   const earnedCount = stops.filter((stop) => stop.earned).length
-  const leagueEarned = leagueComplete(run)
+  const leagueEarned = leagueComplete(run, profile)
   const leagueNext = !leagueEarned && earnedCount === profile.gyms.length
   const nextBadge = stops.find((stop) => stop.next)
   const completedGoals = earnedCount + (leagueEarned ? 1 : 0)
@@ -117,6 +144,7 @@ function buildRouteLine(
   return {
     startTown: profile.startTown,
     leagueTown: profile.leagueTown,
+    finale: profile.finale,
     stops,
     earnedCount,
     leagueEarned,
@@ -126,9 +154,9 @@ function buildRouteLine(
     nextGoal: nextBadge
       ? `${nextBadge.badge} Badge · ${nextBadge.town}`
       : leagueNext
-        ? `${profile.leagueTown} · Hall of Fame`
+        ? `${profile.leagueTown} · ${profile.finale}`
         : leagueEarned
-          ? 'Hall of Fame reached'
+          ? `${profile.finale} ${profile.finale === 'Red' ? 'defeated' : 'reached'}`
           : `${profile.gyms[0].badge} Badge · ${profile.gyms[0].town}`,
     fill: leagueEarned ? 1 : (lastEarned + 1) / goalCount
   }
@@ -141,5 +169,5 @@ export function kantoRouteLine(run: Pick<SpectatorRun, 'goal' | 'player' | 'stat
 export function gameRouteLine(
   run: Pick<SpectatorRun, 'game' | 'goal' | 'player' | 'stats'> | null | undefined
 ): RouteLine {
-  return buildRouteLine(run, profileForGame(run?.game))
+  return buildRouteLine(run, profileForGame(run))
 }
