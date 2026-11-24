@@ -58,6 +58,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wPackJumptableIndex", PackJumptableIndex, 0xCE64},
 		{"wCurPocket", CurPocket, 0xCE65},
 		{"wPackUsedItem", PackUsedItem, 0xCE66},
+		{"wNumPCItems", NumPCItems, 0xD616},
 		{"wSaveFileExists", SaveFileExists, 0xD19A},
 		{"wPlayerName", PlayerName, 0xD1A3},
 		{"wRivalName", RivalName, 0xD1B9},

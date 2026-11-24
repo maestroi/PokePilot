@@ -79,35 +79,49 @@ func gsPCWait(m *emu.Emu, pred func() bool) bool {
 }
 
 // gsOpenBillsPC walks to the area's Pokemon Center PC and opens Bill's PC
-// (the first row, labelled BILL's or SOMEONE's PC). Plain text boxes are the
-// only things advanced with A.
+// (the first row, labelled BILL's or SOMEONE's PC).
 func gsOpenBillsPC(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	return gsOpenCenterPC(m, romData, profile, gsCenterPCRowBills,
+		func() bool { return gsBillsPCMenuUp(m, profile) }, "Bill's PC")
+}
+
+// Rows of the Center PC's "Access whose PC?" menu in every story state
+// (engine/events/pokecenter_pc.asm WhichPC: BILL's first, the player's second).
+const (
+	gsCenterPCRowBills  = 0
+	gsCenterPCRowPlayer = 1
+)
+
+// gsOpenCenterPC walks to the area's Pokemon Center PC and chooses row of
+// "Access whose PC?" until up reports the chosen PC's menu. Plain text boxes
+// are the only things advanced with A.
+func gsOpenCenterPC(m *emu.Emu, romData []byte, profile *gsprofile.Profile, row int, up func() bool, what string) error {
 	center, err := gsOwnedPokecenterID(profile.DecodeOverworld(m).NativeMapID)
 	if err != nil {
 		return err
 	}
 	if err := gsSecondBadgeFaceFrom(m, romData, profile,
 		skill.ExactNativeDestination(center, gsPokecenterPCStandX, gsPokecenterPCStandY),
-		gsPokecenterPCX, gsPokecenterPCY, "gen2:bills-pc"); err != nil {
+		gsPokecenterPCX, gsPokecenterPCY, "gen2:center-pc"); err != nil {
 		return fmt.Errorf("reach PC: %w", err)
 	}
 	m.Tap(emu.A, gsPCMenuHold, 7)
 	for i := 0; i < gsPCPhaseBudget; i++ {
 		m.StepFrames(gsPCStepFrames)
-		if gsBillsPCMenuUp(m, profile) {
+		if up() {
 			return nil
 		}
 		text := gsPCText(m, profile)
 		switch {
 		case strings.Contains(text, "Access whose PC?"):
-			if err := skill.SelectMenuItem(m, 0); err != nil {
-				return fmt.Errorf("choose Bill's PC: %w", err)
+			if err := skill.SelectMenuItem(m, row); err != nil {
+				return fmt.Errorf("choose %s: %w", what, err)
 			}
 		case text != "":
 			m.Tap(emu.A, gsPCMenuHold, 7)
 		}
 	}
-	return fmt.Errorf("%w: Bill's PC menu did not open (screen %q)", errGSSecondBadgeStalled, gsPCText(m, profile))
+	return fmt.Errorf("%w: %s menu did not open (screen %q)", errGSSecondBadgeStalled, what, gsPCText(m, profile))
 }
 
 // gsCloseBillsPC backs out with B until the player is controllable.
