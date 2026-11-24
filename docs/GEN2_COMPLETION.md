@@ -54,7 +54,7 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | Pokégear radio (Radio Card quiz, EXPN Card, Poké Flute channel) | implemented | `gs_radio_card_quiz.go`, `gs_kanto_radio_snorlax.go` |
 | Phone calls | partial | Elm's call handled in-story; phone rematches not a capability (#2660) |
 | Blackout recovery, checkpoint resume | implemented | shared runtime |
-| Full Items pocket blocking a story gift (Dragon Fang) | gap | typed diagnostic only; no free-a-slot repair |
+| Full Items pocket blocking a story gift (Dragon Fang) | implemented | stores a non-medicine stack in the player's PC (`gs_item_storage.go`); deposit menu ROM-tested on Gold+Silver, full-bag Dragon's Den path not yet run |
 | Catching / team building beyond story needs | partial | not required for the main story |
 
 ## Goals, UI, telemetry
@@ -89,11 +89,10 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 2. Fix the coastal runner inputs and run the League and Kanto stage replays for Gold and Silver.
 3. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right on
    the first finished Gen 2 full-game run.
-4. Free a bag slot (toss or deposit) before a story gift when the Items pocket is full.
-5. Phone rematches as a capability (#2660). Optional for the story.
+4. Phone rematches as a capability (#2660). Optional for the story.
 
 ## Session log
 
 - 2026-11-24: audit; this tracker; Gen 2 goals (Kanto badges, 16 badges,
   full-game default), Gen 2 milestones, postgame spectator route line,
-  Full E2E for Gold/Silver (PR #2950).
+  Full E2E for Gold/Silver (PR #2950, merged). Dragon Fang full-bag deposit (PR #2951).
