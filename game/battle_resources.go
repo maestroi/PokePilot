@@ -52,6 +52,40 @@ type BattleResourcesState struct {
 	ActiveTrapped bool
 	Party         []BattlePartyMon
 	Bag           []InventoryItem
+	// Medicines is the profile's own table of bag items whose battle effect
+	// it can prove, ordered by HP restored (smallest first). Generic policy
+	// selects medicine only from here and never names native item ids.
+	Medicines []Medicine
+}
+
+// MedicineFullHP marks a medicine that restores the target to max HP.
+const MedicineFullHP = 1 << 30
+
+// MedicineCuresAny marks a medicine that cures every non-volatile status.
+const MedicineCuresAny = "any"
+
+// Medicine is one native item's battle effect: HP restored (MedicineFullHP
+// for a full restore, zero for a pure cure) and the status it cures
+// (MedicineCuresAny, a portable status name such as "frozen", or none).
+type Medicine struct {
+	NativeItemID uint16
+	HP           int
+	Cures        string
+}
+
+// CuresStatus reports whether m cures the portable status name.
+func (m Medicine) CuresStatus(status string) bool {
+	return status != "" && (m.Cures == MedicineCuresAny || m.Cures == status)
+}
+
+// Medicine returns the profile's table entry for a native item id.
+func (s BattleResourcesState) Medicine(nativeItemID uint16) (Medicine, bool) {
+	for _, med := range s.Medicines {
+		if med.NativeItemID == nativeItemID {
+			return med, true
+		}
+	}
+	return Medicine{}, false
 }
 
 func (s BattleResourcesState) ItemQuantity(nativeItemID uint16) int {

@@ -102,7 +102,7 @@ func chooseSacrificialBenchHealWithStrategyContext(
 		if !ok {
 			continue
 		}
-		projected := projectBattleHPMedicine(mon, item)
+		projected := projectBattleHPMedicine(resources, mon, item)
 		// Do not spend a sacrificial turn on a heal too small to make the carry
 		// a viable switch-in afterward.
 		if projected.HP <= mon.HP || criticallyWeak(projected) {
@@ -138,19 +138,13 @@ func chooseSacrificialBenchHealWithStrategyContext(
 	return best, found
 }
 
-func projectBattleHPMedicine(mon game.BattlePartyMon, item uint8) game.BattlePartyMon {
-	for _, med := range hpMedicines {
-		if med.item != item {
-			continue
-		}
-		hp := int(mon.HP) + med.heal
-		if hp > int(mon.MaxHP) {
-			hp = int(mon.MaxHP)
-		}
-		mon.HP = uint16(hp)
-		break
+func projectBattleHPMedicine(resources game.BattleResourcesState, mon game.BattlePartyMon, item uint8) game.BattlePartyMon {
+	med, ok := resources.Medicine(uint16(item))
+	if !ok {
+		return mon
 	}
-	if item == itemFullRestore {
+	mon.HP = uint16(min(int(mon.HP)+med.HP, int(mon.MaxHP)))
+	if med.CuresStatus(mon.Status) {
 		mon.Status = ""
 	}
 	return mon

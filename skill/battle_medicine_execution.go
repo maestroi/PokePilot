@@ -57,14 +57,40 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 		return fmt.Errorf("skill: UseBattleMedicine: open item list on %s: %w",
 			battleRuntimeContext(runtimeDecoder.DecodeBattleRuntime(m)), err)
 	}
+	// Gold/Silver PACK remembers its last pocket; Bag carries the pocket.
+	if err := selectItemPocketWithDecoder(m, listDecoder, before.Bag[idx].Pocket); err != nil {
+		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
+	}
 	if err := selectScrollingListEntryWithDecoder(m, listDecoder, idx); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: select bag entry %d: %w", idx, err)
 	}
-	if _, err := m.StepUntil(itemUsePartyBudget, func(m *emu.Emu) bool {
+	// Some profiles (Gold/Silver BattlePack) ask USE/QUIT before the target
+	// menu. Confirm only a rendered prompt whose cursor is on USE.
+	field, _ := fieldItemDecoderFor(m)
+	usePrompt := func() bool {
+		if field == nil {
+			return false
+		}
+		prompt := field.DecodeFieldItem(m)
+		return prompt.UsePromptVisible && prompt.UseSelected
+	}
+	targetMenu := func() bool {
 		live := partyDecoder.DecodePartyMenu(m)
 		return live.Visible && live.Kind == game.PartyMenuItemUse
-	}); err != nil {
-		return fmt.Errorf("skill: UseBattleMedicine: medicine target menu did not open within %d frames", itemUsePartyBudget)
+	}
+	for confirms := 0; ; confirms++ {
+		if _, err := m.StepUntil(itemUsePartyBudget, func(*emu.Emu) bool {
+			return targetMenu() || usePrompt()
+		}); err != nil {
+			return fmt.Errorf("skill: UseBattleMedicine: medicine target menu did not open within %d frames", itemUsePartyBudget)
+		}
+		if targetMenu() {
+			break
+		}
+		if confirms >= 2 {
+			return fmt.Errorf("skill: UseBattleMedicine: USE prompt did not lead to the medicine target menu")
+		}
+		m.Tap(emu.A, 3, 7)
 	}
 	if err := SelectPartySlot(m, slot); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: %w", err)

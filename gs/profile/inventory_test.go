@@ -139,3 +139,29 @@ func TestDecodeGoldScrolledNicknamePrompt(t *testing.T) {
 		t.Fatalf("prompt = %+v, want nickname", got)
 	}
 }
+
+// Battle medicine sees only the Items pocket, in native order, so a Bag index
+// is the PACK row; the table is Gen-II numbered (0x0e FULL_RESTORE).
+func TestDecodeGoldBattleResourcesProjectsItemsPocketMedicine(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.NumItems] = 2
+	mem[sym.Items], mem[sym.Items+1] = 0x90, 1 // non-medicine
+	mem[sym.Items+2], mem[sym.Items+3] = 0x0e, 3
+	mem[sym.NumBalls] = 1
+	mem[sym.Balls], mem[sym.Balls+1] = 0x05, 5
+
+	res := NewGold().DecodeBattleResources(&mem)
+	if len(res.Bag) != 2 || res.Bag[1].NativeItemID != 0x0e || res.Bag[1].Pocket != game.MachinePocketItems {
+		t.Fatalf("battle bag = %+v, want the two Items-pocket rows only", res.Bag)
+	}
+	if idx, ok := res.ItemIndex(0x0e); !ok || idx != 1 {
+		t.Fatalf("FULL_RESTORE row = %d,%v want 1", idx, ok)
+	}
+	med, ok := res.Medicine(0x0e)
+	if !ok || med.HP != game.MedicineFullHP || !med.CuresStatus("frozen") {
+		t.Fatalf("Gen-II 0x0e medicine = %+v,%v want FULL_RESTORE", med, ok)
+	}
+	if med, ok := res.Medicine(0x10); !ok || med.HP != 200 || med.Cures != "" {
+		t.Fatalf("Gen-II 0x10 medicine = %+v,%v want HYPER_POTION", med, ok)
+	}
+}
