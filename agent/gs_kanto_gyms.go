@@ -27,7 +27,7 @@ var gsKantoGymStages = []gsKantoGymSpec{
 	{gsprofile.ProgressKantoRainbowBadgeEarned, gsprofile.ProgressKantoMarshBadgeEarned,
 		"erika", "CELADON_GYM", "CELADON_POKECENTER_1F", 5, 3, 5, 4},
 	{gsprofile.ProgressKantoSoulBadgeEarned, gsprofile.ProgressKantoRainbowBadgeEarned,
-		"janine", "FUCHSIA_GYM", "FUCHSIA_POKECENTER_1F", 1, 10, 1, 11},
+		"janine", "FUCHSIA_GYM", "FUCHSIA_POKECENTER_1F", 1, 10, 1, 9},
 	{gsprofile.ProgressKantoCascadeBadgeEarned, gsprofile.ProgressKantoSoulBadgeEarned,
 		"misty", "CERULEAN_GYM", "CERULEAN_POKECENTER_1F", 5, 3, 5, 4},
 	{gsprofile.ProgressKantoBoulderBadgeEarned, gsprofile.ProgressKantoCascadeBadgeEarned,
@@ -38,9 +38,9 @@ var gsKantoGymStages = []gsKantoGymSpec{
 		"blue", "VIRIDIAN_GYM", "VIRIDIAN_POKECENTER_1F", 5, 3, 5, 4},
 }
 
-// Kanto native corridors used by the experimental post-League gym stages.
-// Outside these known retail map names the interruption driver fails closed;
-// the autofixer can then report an unsupported crossing with a checkpoint.
+// Kanto native corridors the post-League controllers are known to use. With a
+// ROM, gsrom.PostLeagueMap also owns every other map routing can enter
+// (Route 10 South, Rock Tunnel, ...); this list is the ROM-free contract.
 var gsKantoGymOwnedMaps = []string{
 	"ROUTE_6", "ROUTE_6_SAFFRON_GATE", "ROUTE_6_UNDERGROUND_PATH_ENTRANCE",
 	"SAFFRON_CITY", "SAFFRON_GYM", "SAFFRON_POKECENTER_1F",

@@ -8,10 +8,15 @@ import (
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
-// NativeMapProvider exposes the verified wide-id Gold/Silver topology slice.
-// The historical MapProvider contract remains uint8 and cannot represent the
-// Gen-II (map group, map number) namespace without collisions.
+// NativeMapProvider exposes the wide-id Gold/Silver topology: the verified
+// slice where it exists, the cartridge's own headers and collision for every
+// other map (Kanto, ports, Mt. Silver). A ROM whose tables cannot be located
+// keeps the slice alone. The historical MapProvider contract remains uint8
+// and cannot represent the Gen-II (group, number) namespace.
 func (*Profile) NativeMapProvider(romData []byte) worldmodel.NativeGridProvider {
+	if provider, err := gsrom.NewRuntimeWorldProvider(romData); err == nil {
+		return provider
+	}
 	return gsrom.NewFirstBadgeWorldProvider(romData)
 }
 

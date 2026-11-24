@@ -37,9 +37,9 @@ func executeGSKantoReceiveLostDoll(m *emu.Emu, romData []byte) error {
 		return err
 	}
 	// The Fairy Doll object occupies (2,4) and the Fan Club man stands
-	// at (2,3). Approach him from (3,3), not through the Doll sprite.
+	// at (2,3); (3,3) is a table in ROM collision. Approach from (1,3).
 	return gsKantoStoryTalk(m, romData, profile,
-		gsprofile.ProgressKantoLostDollReceived, "POKEMON_FAN_CLUB", 3, 3, 2, 3, label)
+		gsprofile.ProgressKantoLostDollReceived, "POKEMON_FAN_CLUB", 1, 3, 2, 3, label)
 }
 
 // CopycatsHouse2F.asm first takes LOST_ITEM, then awards PASS. An already

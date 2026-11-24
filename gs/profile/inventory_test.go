@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	gsdata "github.com/maestroi/pokepilot/gs/data"
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
@@ -163,5 +164,57 @@ func TestDecodeGoldBattleResourcesProjectsItemsPocketMedicine(t *testing.T) {
 	}
 	if med, ok := res.Medicine(0x10); !ok || med.HP != 200 || med.Cures != "" {
 		t.Fatalf("Gen-II 0x10 medicine = %+v,%v want HYPER_POTION", med, ok)
+	}
+}
+
+// Cycling Road gates turn the player back at x=5 without a BICYCLE; with
+// one the gate is ordinary floor.
+func TestGoldBicycleGateIsAScriptBarrierWithoutBicycle(t *testing.T) {
+	var mem fakeMemory
+	gate, _ := gsdata.MapByName("ROUTE_16_GATE")
+	mem[sym.MapGroup], mem[sym.MapNumber] = gate.Group, gate.Number
+	p := NewGold()
+	if got := p.gen2ScriptBarriers(&mem); len(got) != 2 || got[0] != (game.MapPoint{X: 5, Y: 4}) {
+		t.Fatalf("barriers without bicycle = %+v", got)
+	}
+	mem[sym.NumKeyItems] = 1
+	mem[sym.KeyItems] = gen2BicycleItem
+	if got := p.gen2ScriptBarriers(&mem); got != nil {
+		t.Fatalf("barriers with bicycle = %+v, want none", got)
+	}
+}
+
+// Off-screen standing NPCs still block their tiles. Hidden (masked) map
+// objects and wanderers are not projected; loaded ones come from structs.
+func TestDecodeGen2LiveObjectsProjectsOffscreenStandingNPCs(t *testing.T) {
+	var mem fakeMemory
+	put := func(i int, sprite, x, y, move byte, mask byte) {
+		base := sym.MapObjects + uint16(i*sym.MapObjectLen)
+		mem[base], mem[base+1], mem[base+2], mem[base+3], mem[base+4] = 0xff, sprite, y+4, x+4, move
+		mem[sym.ObjectMasks+uint16(i)] = mask
+	}
+	put(1, 0x2d, 32, 8, 0x08, 0)     // standing left, off screen
+	put(2, 0x2d, 14, 10, 0x08, 0xff) // hidden by its event
+	put(3, 0x27, 20, 5, 0x02, 0)     // wanderer
+	objects, _ := decodeGen2LiveObjects(&mem)
+	if len(objects) != 1 || objects[0] != (game.LiveMapObject{Slot: 1, X: 32, Y: 8, Stationary: true}) {
+		t.Fatalf("objects = %+v, want only the off-screen standing NPC", objects)
+	}
+}
+
+// BIGDOLL objects (Vermilion's Snorlax) collide as a 2x2 square.
+func TestDecodeGen2LiveObjectsBigDollBlocksTwoByTwo(t *testing.T) {
+	var mem fakeMemory
+	base := sym.MapObjects + uint16(1*sym.MapObjectLen)
+	mem[base], mem[base+1], mem[base+2], mem[base+3], mem[base+4] = 0xff, 0x40, 8+4, 34+4, 0x15
+	objects, _ := decodeGen2LiveObjects(&mem)
+	got := map[[2]int]bool{}
+	for _, o := range objects {
+		got[[2]int{o.X, o.Y}] = o.Stationary
+	}
+	for _, at := range [][2]int{{34, 8}, {35, 8}, {34, 9}, {35, 9}} {
+		if !got[at] {
+			t.Fatalf("big doll tiles = %v, missing stationary %v", got, at)
+		}
 	}
 }

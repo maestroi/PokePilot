@@ -72,6 +72,8 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wCherrygroveCitySceneID", CherrygroveCitySceneID, 0xD6CF},
 		{"wMrPokemonsHouseSceneID", MrPokemonsHouseSceneID, 0xD6D0},
 		{"wEventFlags", EventFlags, 0xD7B7},
+		{"wMapObjects", MapObjects, 0xD445},
+		{"wObjectMasks", ObjectMasks, 0xD545},
 		{"wBikeFlags", BikeFlags, 0xD93F},
 		{"wBattleResult", BattleResult, 0xCFE9},
 		{"wNamingScreenDestinationPointer", NamingScreenDestination, 0xC5D0},

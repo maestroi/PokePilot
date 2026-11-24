@@ -75,7 +75,13 @@ const (
 	ObjectStructs    uint16 = 0xD1FD // wObjectStructs
 	ObjectStructLen         = 0x28
 	NumObjectStructs        = 13
-	PlayerState      uint16 = 0xD682 // wPlayerState
+	// wMapObjects: every object of the current map, loaded on screen or
+	// not; wObjectMasks marks hidden ones (nonzero).
+	MapObjects    uint16 = 0xD445 // wMapObjects
+	MapObjectLen         = 0x10
+	NumMapObjects        = 16
+	ObjectMasks   uint16 = 0xD545 // wObjectMasks
+	PlayerState   uint16 = 0xD682 // wPlayerState
 
 	// Early Johto story state.
 	TimeOfDayPalset        uint16 = 0xD56E // wTimeOfDayPalset

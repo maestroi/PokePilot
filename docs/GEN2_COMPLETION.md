@@ -28,12 +28,12 @@ bit or key item, and an `agent/gs_*.go` controller. Offers live in
 | Radio Tower takeover, Underground, Ice Path, Clair, Dragon's Den, Rising (8) | verified-live | operator-confirmed 8-badge runs |
 | Victory Road → Indigo Plateau | verified-live (once) | run-3om7ptfumukt9aaxwusxdq9sj, after a blackout retry |
 | Elite Four Will → Karen, Lance, Hall of Fame | verified-replay (local, Gold) | 2026-11-24: from run-zzrclw1r60a8g's real Radio Tower checkpoint (#2928), the League reset, Will, Koga, Bruno, Karen, Lance and the Hall of Fame all passed on retail Gold; ends in New Bark Town. Needed in-battle medicine and the Champion aftermath fix (see Systems). Silver not replayed |
-| S.S. Ticket, S.S. Aqua first landing | implemented | Kanto capture/replay harness exists |
-| Kanto: Surge, Sabrina, Erika, Janine | implemented | |
-| Power Plant: manager, Cerulean Rocket, Machine Part, restore | verified-replay | #2945 |
-| Copycat, Lost Doll, Magnet Train Pass, Misty date, Cascade | verified-replay | #2945 |
-| Radio Card, EXPN Card, Snorlax, Brock, Blaine, Blue invite, Earth | verified-replay | #2947 |
-| Oak's Mt. Silver permit, Red | verified-replay | #2947; Red is proven by the disappearance event |
+| S.S. Ticket, S.S. Aqua first landing | verified-replay (local, Gold) | 2026-11-24 chain from the post-Hall-of-Fame state; needed the ROM routing below plus ship fixes (boarding prompt, B1F east ladder, ROM-checked stand tiles) |
+| Kanto: Surge, Sabrina, Erika, Janine | verified-replay (local, Gold) | Same chain. Needed Saffron Gym teleporter proofs, the Cycling Road bicycle barrier, off-screen NPC blockers and Janine's stand tile (1,9) |
+| Power Plant: manager, Cerulean Rocket, Machine Part, restore | verified-replay (local, Gold) | Needs Surf via the Route 9 lake channel (`gsKantoSurfToPowerPlant`). Leaving the strip by Surf once failed to settle at Route 10 North (15,10) and passed on retry |
+| Copycat, Lost Doll, Magnet Train Pass, Misty date, Cascade | verified-replay (local, Gold) | Fan Club stand tile was a table (fixed to (1,3)) |
+| Radio Card, EXPN Card, Snorlax, Brock, Blaine, Blue invite, Earth | verified-replay (local, Gold) | Radio Card came from the real run. Snorlax needed the 2x2 big-object blocker and seam re-entry |
+| Oak's Mt. Silver permit, Red | permit verified-replay (local, Gold); **Red: gap** | The route to Red and the battle trigger work. Red beat a solo L84 Meganium three times. Gen 2 combat recovery only trains the lead (capped at L60, Johto grind sites), so after a Red loss no executable preparation exists. See Next tasks |
 
 No unimplemented mandatory story milestone is known. **No full fresh-save →
 Red run has been observed.** Do not call Gen 2 verified until one has.
@@ -45,6 +45,8 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | RAM decode: party, bag (all pockets), badges (Johto+Kanto), money, dex, map, RTC/time of day | implemented, used live | `gs/profile`, `gs/sym` |
 | Event flags / story facts | implemented | `gs/profile/progression.go` |
 | Native world graph, warps, connections, collision (incl. ice, pits, whirlpool, waterfall) | implemented | `gs/rom`, `web/src/shared/gen2WorldManifest.generated.ts` |
+| Post-League routing topology | verified-replay (local, Gold) to Red's room | `gs/rom/world_runtime.go`: hand slice + ROM headers/collision for Kanto, ports, Fast Ship, Magnet Train, Route 28, Mt. Silver. Before 2026-11-24 routing had no Kanto maps at all |
+| Routing blockers | verified-replay (local, Gold) | stationary NPCs (incl. off-screen `wMapObjects`) and profile script barriers (Cycling Road gates without a BICYCLE) are durable; same-map teleporter maps get reachability proofs |
 | Field moves Cut/Surf/Strength/Flash/Fly/Whirlpool/Waterfall/Rock Smash + teaching carrier | implemented | `agent/gs_field_carrier.go`, `gs_surf.go`, `gs_pit_puzzles.go` |
 | Healing (nearest native Center), lead training after a combat loss | implemented | `gs_party_recovery.go`, `gs_combat_recovery.go` |
 | Trainer/gym/scripted battles | implemented | shared battle driver + Gen 2 decoders |
@@ -93,12 +95,35 @@ state files.
 
 ## Next tasks (in priority order)
 
-1. Run a fresh Gold full-game run (default goal) on the farm; triage the
-   first failure from its checkpoint.
-2. Fix the coastal runner inputs and run the League and Kanto stage replays for Gold and Silver.
-3. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right on
-   the first finished Gen 2 full-game run.
-4. Phone rematches as a capability (#2660). Optional for the story.
+1. **Red needs a stronger team (gap).** Gen 2 combat recovery trains only
+   the lead, capped at `gsCombatRecoveryMaxLevel` = 60, on Johto grind sites.
+   It needs (a) post-League grind sites (Route 28 / Silver Cave) and a higher
+   cap, and (b) bench training: the readiness model already assigns the
+   deficit past the ceiling to the bench. Also heal at the Silver Cave Center
+   before climbing. Repro: the local Kanto chain from the Mt. Silver permit
+   state (see "Local chain replays").
+2. Merge #2952 (in-battle medicine), then the stacked Kanto routing PR.
+3. Run a fresh Gold full-game run (default goal) on the farm once Postgres is
+   back (`pokefarm_postgres` was 0/1 on 2026-11-24); triage the first failure.
+4. Replay the same chains on Silver.
+5. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right
+   on the first finished Gen 2 full-game run.
+6. Phone rematches as a capability (#2660). Optional for the story.
+
+## Local chain replays
+
+Throwaway harnesses (never commit them or the `.state` files) drove every
+step above on retail Gold. Each loads a real checkpoint and repeatedly runs
+`ExecuteWithAdapter` on the first unmet milestone of an ordered chain,
+saving a state after each pass:
+
+- League: from run-zzrclw1r60a8g's Radio Tower checkpoint (issue #2928),
+  chain Will → Lance → Hall of Fame (after a reset, restart from Will).
+- Kanto: from the post-credits New Bark state, chain S.S. Ticket → first
+  landing → Kanto gyms and story in `gsKantoReplaySpecs` order → Red.
+
+There is no planner here: no heal/train objectives and no LLM, so combat
+losses in a chain are not proof that a live run would lose.
 
 ## Session log
 
@@ -111,3 +136,8 @@ state files.
   hardcoded in the generic policy), and `skill.Battle` settlement pressed
   through Lance's ending and credits. Both fixed; Gold reaches the Hall of
   Fame.
+- 2026-11-24 (Kanto): routing had no Kanto maps. Added the ROM-backed
+  post-League topology and fixed every blocker the Gold chain hit, from the
+  S.S. Aqua to Red's room (stationary and off-screen NPCs, big sprites,
+  teleporter proofs, seam re-entry, bicycle gates, the Power Plant channel,
+  wrong stand tiles). Red is the remaining gap (team strength).

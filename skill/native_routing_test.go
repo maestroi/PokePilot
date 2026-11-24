@@ -643,3 +643,85 @@ func TestNativeConnectionTargetsJudgeLandingInSourceTraversal(t *testing.T) {
 		t.Fatalf("water targets = %v err=%v, want all 4 south-seam tiles", targets, err)
 	}
 }
+
+// TestNativeTeleporterProofsSealRoomsAcrossPads pins Saffron Gym's shape: two
+// rooms split by a wall, linked only by a same-map pad pair. From the west
+// room the exit door in the east room is sealed, but the pad is not, so the
+// planner can chain pad -> door instead of discovering seals one try at a time.
+func TestNativeTeleporterProofsSealRoomsAcrossPads(t *testing.T) {
+	const w, h = 5, 3
+	walk := make([]bool, w*h)
+	for i := range walk {
+		walk[i] = i%w != 2 // column 2 is a wall
+	}
+	grid := nativeTestGrid(t, w, h, walk)
+	const gym = 0x1904
+	header := worldmodel.NativeMapHeader{ID: gym, Warps: []worldmodel.NativeWarp{
+		{X: 0, Y: 1, DestMap: gym, DestWarpID: 1}, // west pad
+		{X: 4, Y: 1, DestMap: gym, DestWarpID: 0}, // east pad
+		{X: 4, Y: 2, DestMap: 0x1902},             // east door
+	}}
+	edges := []world.NativeEdge{
+		{Kind: world.EdgeWarp, From: gym, To: gym, WarpX: 0, WarpY: 1, DestWarp: 1},
+		{Kind: world.EdgeWarp, From: gym, To: gym, WarpX: 4, WarpY: 1, DestWarp: 0},
+		{Kind: world.EdgeWarp, From: gym, To: 0x1902, WarpX: 4, WarpY: 2},
+	}
+	bad := map[world.NativeUnreachable]bool{}
+	for _, u := range nativeTeleporterProofs(nil, grid, game.LiveTopologyState{}, header, edges, gym, world.NativeEntryUnknown, 1, 0) {
+		bad[u] = true
+	}
+	if !bad[world.NativeUnreachable{Map: gym, Entry: world.NativeEntryUnknown, Edge: edges[2]}] {
+		t.Fatal("east door must be sealed from the west room")
+	}
+	if bad[world.NativeUnreachable{Map: gym, Entry: world.NativeEntryUnknown, Edge: edges[0]}] {
+		t.Fatal("west pad must stay reachable from the west room")
+	}
+	if bad[world.NativeUnreachable{Map: gym, Entry: 1, Edge: edges[2]}] {
+		t.Fatal("east pad landing must reach the east door")
+	}
+	g := &world.NativeGraph{Edges: map[uint16][]world.NativeEdge{gym: edges, 0x1902: nil}}
+	route, err := world.FindNativeRouteToEntry(g, gym, world.NativeEntryUnknown, 0x1902, nil, bad)
+	if err != nil || len(route) != 2 || route[0] != edges[0] || route[1] != edges[2] {
+		t.Fatalf("route = %+v, %v; want west pad then east door", route, err)
+	}
+}
+
+// A standing NPC sealing a corridor (the S.S. Aqua duty sailor) is durable:
+// waiting cannot open it. A wandering sprite stays transient.
+func TestNativeDurableBlockersKeepStationaryNPCs(t *testing.T) {
+	header := worldmodel.NativeMapHeader{Warps: []worldmodel.NativeWarp{{X: 0, Y: 0}}}
+	live := game.LiveTopologyState{LiveObjects: []game.LiveMapObject{
+		{Slot: 1, X: 2, Y: 2, Stationary: true},
+		{Slot: 2, X: 3, Y: 3},
+	}}
+	got := nativeDurableBlockers(live, header)
+	if !got[[2]int{2, 2}] || got[[2]int{3, 3}] || !got[[2]int{0, 0}] {
+		t.Fatalf("durable blockers = %v; want warp + stationary NPC only", got)
+	}
+}
+
+// Vermilion's shape: a wall row splits the map. The north seam lands in the
+// goal's half, the east seam only in the pocket, so only the north seam is
+// a good entry for re-routing.
+func TestNativeSeamReachesOnlyFromLandingsInTheGoalComponent(t *testing.T) {
+	const w, h = 4, 5
+	walk := make([]bool, w*h)
+	for i := range walk {
+		walk[i] = i/w != 2 // row 2 is a wall
+	}
+	grid := nativeTestGrid(t, w, h, walk)
+	const city, route6, route11 = 0x0c03, 0x0c01, 0x0c02
+	provider := nativeConnectionGridProvider{headers: nativeConnectionTestProvider{
+		route6:  {ID: route6, WidthBlocks: 2, HeightBlocks: 2},
+		route11: {ID: route11, WidthBlocks: 2, HeightBlocks: 1}, // rows 0-1 only
+	}}
+	goal := NativeDestination{Map: city, X: 1, Y: 1}
+	north := world.NativeEdge{Kind: world.EdgeConnection, From: route6, To: city, Dir: 1}             // south from Route 6
+	east := world.NativeEdge{Kind: world.EdgeConnection, From: route11, To: city, Dir: 2, Offset: -2} // west from Route 11, rows 4+
+	if !nativeSeamReaches(provider, grid, north, nil, goal) {
+		t.Fatal("north seam lands beside the goal")
+	}
+	if nativeSeamReaches(provider, grid, east, nil, goal) {
+		t.Fatal("east seam lands only in the walled-off pocket")
+	}
+}
