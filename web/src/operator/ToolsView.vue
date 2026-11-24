@@ -9,7 +9,7 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
-import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
+import { GEN2_FULL_GAME_GOAL, fullGameGoal, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
 import { operatorHref } from '../shared/urls'
 
 const launchDefaults = readRunLaunchDefaults()
@@ -120,10 +120,6 @@ const selectedDecisionDeployment = computed(() => {
 })
 const selectedDeployment = computed(() => deployments.value.find((deployment) => deployment.id === form.llm_deployment))
 
-// Defeating Red on Mt. Silver is the end of Gold/Silver. Hall of Fame is
-// only the Johto League, never full-game completion.
-const GEN2_FULL_GAME_GOAL = 'progress:gs_mt_silver_red_defeated'
-
 watch(deployments, (next) => {
   const [kind, id] = splitDecisionTarget(decisionTarget.value)
   if (kind === 'deployment' && !next.some((d) => d.id === id && d.enabled !== false)) decisionTarget.value = 'off'
@@ -165,7 +161,7 @@ watch(runMode, mode => {
       runMode.value = 'standard'
       return
     }
-    form.goal = FULL_E2E_GOAL
+    form.goal = fullGameGoal(form.game)!
     form.recovery_profile = 'resilient'
     form.endless = false
     form.random_seed = false
@@ -302,7 +298,7 @@ async function submit(): Promise<void> {
   }
 
   if (fullE2ESelected.value && !supportsFullE2E(form)) {
-    error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
+    error.value = 'Full E2E supports Pokémon Red, Gold or Silver with the LLM planner.'
     return
   }
   if (fullE2ESelected.value && uploadPrivate.value && !uploadAcknowledged.value) {
@@ -385,7 +381,7 @@ async function submit(): Promise<void> {
               <option value="full-e2e" :disabled="!supportsFullE2E(form)">Full E2E · complete game → episode + Short</option>
             </select>
           </label>
-          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E currently requires Pokémon Red and the LLM planner.</p>
+          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E requires Pokémon Red, Gold or Silver and the LLM planner.</p>
           <template v-if="fullE2ESelected">
             <p class="mt-2 text-xs text-slate-300">
               The goal is locked to the Champion. When the run finishes, the server automatically verifies the Hall of Fame, renders a broadcast replay and both edited formats, and queues private publication candidates.

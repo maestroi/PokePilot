@@ -67,7 +67,7 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | Player milestones (Pokédex, HMs, Rocket, Radio Tower, Champion, Hall of Fame, Kanto beats, Red) | done (`gs/profile/milestones.go`) |
 | Spectator route line: Johto → Hall of Fame, then Kanto in controller order → Mt. Silver · Red | done |
 | Spectator goal meter for full game: N/16 badges, then Red | done |
-| Full Production E2E mode | gap: gated to Red (`web/src/operator/newRunMode.ts`, media pipeline expects a Champion/Hall of Fame proof) |
+| Full Production E2E mode (New Run + Media tab) | done in UI: Gold/Silver target Red and require a `goal_complete` or `Red` milestone proof. The server pipeline was already game-agnostic. Not exercised on a real Gen 2 run |
 | Autofixer / triage | shared: Gen 2 failures go through the same typed failure + checkpoint path; nothing Gen 2 specific has been audited |
 
 ## External blockers
@@ -87,12 +87,13 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 1. Run a fresh Gold full-game run (default goal) on the farm; triage the
    first failure from its checkpoint.
 2. Fix the coastal runner inputs and run the League and Kanto stage replays for Gold and Silver.
-3. Full Production E2E for Gen 2: accept a Red-defeat proof and Gen 2
-   media metadata, not only Red's Hall of Fame.
+3. Check that Gen 2 episode/Short renders (theme `pokegold-gen2`) look right on
+   the first finished Gen 2 full-game run.
 4. Free a bag slot (toss or deposit) before a story gift when the Items pocket is full.
 5. Phone rematches as a capability (#2660). Optional for the story.
 
 ## Session log
 
 - 2026-11-24: audit; this tracker; Gen 2 goals (Kanto badges, 16 badges,
-  full-game default), Gen 2 milestones, postgame spectator route line.
+  full-game default), Gen 2 milestones, postgame spectator route line,
+  Full E2E for Gold/Silver (PR #2950).

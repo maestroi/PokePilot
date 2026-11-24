@@ -31,7 +31,6 @@ test('tools run form exposes Gold and Silver with native Gen2 starters', () => {
   assert.ok(toolsSource.includes('<option value="cyndaquil">Cyndaquil</option>'))
   assert.ok(toolsSource.includes('<option value="totodile">Totodile</option>'))
   assert.ok(toolsSource.includes('form.goal = GEN2_FULL_GAME_GOAL'))
-  assert.ok(toolsSource.includes("const GEN2_FULL_GAME_GOAL = 'progress:gs_mt_silver_red_defeated'"))
   assert.ok(toolsSource.includes('Legacy preset · stops at Mineral Badge'))
   assert.ok(toolsSource.includes("['Earn 3 badges.', '3 badges · Plain · Whitney']"))
   assert.ok(toolsSource.includes("['Earn 4 badges.', '4 badges · Fog · Morty']"))
