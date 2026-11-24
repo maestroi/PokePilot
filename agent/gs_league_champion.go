@@ -44,7 +44,10 @@ func gsLeagueChampionAdvance(m *emu.Emu, profile *gsprofile.Profile, goal game.P
 			if !ok || battle.Kind != game.BattleTrainer {
 				return fmt.Errorf("%w: Lance battle is not decoded as a trainer encounter", errGSSecondBadgeUnexpectedState)
 			}
-			result, err := skill.Battle(m, skill.StatAwareMove(m.ROM()))
+			// The post-Lance scene runs into the Hall of Fame and credits
+			// without returning control; this loop owns it, not settlement.
+			result, err := skill.BattleWithOptions(m, skill.StatAwareMove(m.ROM()),
+				skill.BattleOptions{CallerOwnsAftermath: true})
 			if err != nil {
 				return fmt.Errorf("gen2 Champion Lance battle: %w", err)
 			}

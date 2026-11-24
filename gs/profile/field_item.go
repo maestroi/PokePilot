@@ -89,6 +89,14 @@ func (p *Profile) DecodeFieldItem(reader game.MemoryReader) game.FieldItemState 
 		strings.Contains(text, "TOSS") && strings.Contains(text, "QUIT") &&
 		reader.Peek8(sym.CurPocket) == gen2PocketItems &&
 		cols == 1 && rows == 4 && x == 1 && y >= 1 && y <= rows
+	// In battle, a usable item opens BattlePack's 2-row USE/QUIT box
+	// (engine/items/pack.asm ItemSubmenu .UsableMenuData) before the
+	// party target menu.
+	out.UsePromptVisible = out.UsePromptVisible || (out.InBattle &&
+		strings.Contains(text, "USE") && strings.Contains(text, "QUIT") &&
+		!strings.Contains(text, "GIVE") &&
+		reader.Peek8(sym.CurPocket) == gen2PocketItems &&
+		cols == 1 && rows == 2 && x == 1 && y >= 1 && y <= rows)
 	out.UseSelected = out.UsePromptVisible && y == 1
 	out.MoveMenuVisible = !out.InBattle &&
 		strings.Contains(strings.ToLower(text), "which move?") &&

@@ -4,7 +4,13 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 )
+
+var gen2TestMedicines = []game.Medicine{
+	{NativeItemID: 0x10, HP: 200},
+	{NativeItemID: 0x0e, HP: game.MedicineFullHP, Cures: game.MedicineCuresAny},
+}
 
 func TestBattleResourcePolicyAcceptsGen2ShapedState(t *testing.T) {
 	resources := game.BattleResourcesState{
@@ -37,14 +43,28 @@ func TestBattleResourcePolicyAcceptsGen2ShapedState(t *testing.T) {
 				},
 			},
 		},
+		// Gen-II numbering: 0x0e is FULL_RESTORE, 0x10 is HYPER_POTION
+		// (0x10 is FULL_RESTORE in Gen I). Policy must follow the profile.
+		Medicines: gen2TestMedicines,
 		Bag: []game.InventoryItem{
-			{NativeItemID: uint16(itemFullRestore), Quantity: 1},
+			{NativeItemID: 0x10, Quantity: 1},
+			{NativeItemID: 0x0e, Quantity: 1},
 		},
 	}
 
 	choice, ok := chooseBattleMedicineState(resources)
-	if !ok || choice.Item != itemFullRestore || choice.Slot != 0 {
-		t.Fatalf("medicine = %+v,%v want FULL RESTORE on active slot", choice, ok)
+	if !ok || choice.Item != 0x0e || choice.Slot != 0 {
+		t.Fatalf("medicine = %+v,%v want Gen-II FULL RESTORE 0x0e on active slot", choice, ok)
+	}
+	hyperOnly := resources
+	hyperOnly.Bag = []game.InventoryItem{{NativeItemID: 0x10, Quantity: 1}}
+	if choice, ok := chooseBattleMedicineState(hyperOnly); !ok || choice.Item != 0x10 || choice.Reason != "active HP 8/30" {
+		t.Fatalf("Gen-II 0x10 = %+v,%v want an HP-only HYPER POTION turn", choice, ok)
+	}
+	none := resources
+	none.Medicines = nil
+	if choice, ok := chooseBattleMedicineState(none); ok {
+		t.Fatalf("no profile medicine table chose %+v; generic policy must not guess ids", choice)
 	}
 	if slot, ok := resources.PPRecoverySlot(); !ok || slot != 1 {
 		t.Fatalf("PPRecoverySlot = %d,%v want 1,true", slot, ok)
@@ -97,7 +117,8 @@ func TestSacrificialBenchHealRestoresMateriallyStrongerCarry(t *testing.T) {
 				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}},
 			},
 		},
-		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
+		Bag:       []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
+		Medicines: gen1.Medicines,
 	}
 	battle := game.BattleState{
 		ActiveLevel: 30,

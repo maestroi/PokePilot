@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 )
 
 func freezeSacrificeParty(active int, mons ...game.BattlePartyMon) game.BattleResourcesState {
-	return game.BattleResourcesState{InBattle: true, ActiveSlot: active, Party: mons}
+	return game.BattleResourcesState{InBattle: true, ActiveSlot: active, Party: mons, Medicines: gen1.Medicines}
 }
 
 func healthyFighter() game.BattlePartyMon {

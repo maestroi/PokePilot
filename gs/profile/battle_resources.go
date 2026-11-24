@@ -37,7 +37,7 @@ func gen2Status(raw byte) string {
 	}
 }
 
-func (*Profile) DecodeBattleResources(reader game.MemoryReader) game.BattleResourcesState {
+func (p *Profile) DecodeBattleResources(reader game.MemoryReader) game.BattleResourcesState {
 	if reader == nil {
 		return game.BattleResourcesState{ActiveSlot: -1}
 	}
@@ -90,10 +90,14 @@ func (*Profile) DecodeBattleResources(reader game.MemoryReader) game.BattleResou
 		}
 		out.Party = append(out.Party, mon)
 	}
-	// Bag policy remains intentionally empty in this slice. Gen-II item IDs
-	// differ from Gen-I's medicine table; exposing native inventory before the
-	// shared medicine vocabulary is generation-neutral would make Battle use
-	// the wrong items.
+	// Battle medicine lives in the Items pocket. Bag keeps only that pocket,
+	// in native order, so an entry's index is its row in the PACK list.
+	for _, item := range p.DecodeInventory(reader).Items {
+		if item.Pocket == game.MachinePocketItems {
+			out.Bag = append(out.Bag, item)
+		}
+	}
+	out.Medicines = gen2Medicines
 	return out
 }
 

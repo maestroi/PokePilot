@@ -27,7 +27,7 @@ bit or key item, and an `agent/gs_*.go` controller. Offers live in
 | Lake of Rage, Mahogany, Rocket Hideout, Glacier (7) | verified-live | operator-confirmed 8-badge runs |
 | Radio Tower takeover, Underground, Ice Path, Clair, Dragon's Den, Rising (8) | verified-live | operator-confirmed 8-badge runs |
 | Victory Road → Indigo Plateau | verified-live (once) | run-3om7ptfumukt9aaxwusxdq9sj, after a blackout retry |
-| Elite Four Will → Karen, Lance, Hall of Fame | implemented | league stage replay workflow never run in CI |
+| Elite Four Will → Karen, Lance, Hall of Fame | verified-replay (local, Gold) | 2026-11-24: from run-zzrclw1r60a8g's real Radio Tower checkpoint (#2928), the League reset, Will, Koga, Bruno, Karen, Lance and the Hall of Fame all passed on retail Gold; ends in New Bark Town. Needed in-battle medicine and the Champion aftermath fix (see Systems). Silver not replayed |
 | S.S. Ticket, S.S. Aqua first landing | implemented | Kanto capture/replay harness exists |
 | Kanto: Surge, Sabrina, Erika, Janine | implemented | |
 | Power Plant: manager, Cerulean Rocket, Machine Part, restore | verified-replay | #2945 |
@@ -48,7 +48,8 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | Field moves Cut/Surf/Strength/Flash/Fly/Whirlpool/Waterfall/Rock Smash + teaching carrier | implemented | `agent/gs_field_carrier.go`, `gs_surf.go`, `gs_pit_puzzles.go` |
 | Healing (nearest native Center), lead training after a combat loss | implemented | `gs_party_recovery.go`, `gs_combat_recovery.go` |
 | Trainer/gym/scripted battles | implemented | shared battle driver + Gen 2 decoders |
-| League items: Indigo Mart purchase, in-League medicine/PP | implemented, unqualified | `gs_league_resources.go`, `gs_league_stock.go` |
+| League items: Indigo Mart purchase, between-room medicine/PP | verified-replay (local, Gold) | `gs_league_resources.go`, `gs_league_stock.go` |
+| In-battle medicine (HP/status/Full Restore, bench sacrifice heal) | verified-replay (local, Gold) | profile-owned `game.Medicine` table (`gs/profile/medicine.go`, `gen1/medicine.go`); Gen 2 had no in-battle items before this. Battle PACK USE/QUIT box decoded in `gs/profile/field_item.go` |
 | PC storage | implemented | `gs_pc.go` |
 | Clock / day-night | implemented | `gs_clock_executor.go` |
 | Pokégear radio (Radio Card quiz, EXPN Card, Poké Flute channel) | implemented | `gs_radio_card_quiz.go`, `gs_kanto_radio_snorlax.go` |
@@ -68,7 +69,7 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 | Spectator route line: Johto → Hall of Fame, then Kanto in controller order → Mt. Silver · Red | done |
 | Spectator goal meter for full game: N/16 badges, then Red | done |
 | Full Production E2E mode (New Run + Media tab) | done in UI: Gold/Silver target Red and require a `goal_complete` or `Red` milestone proof. The server pipeline was already game-agnostic. Not exercised on a real Gen 2 run |
-| Autofixer / triage | shared: Gen 2 failures go through the same typed failure + checkpoint path; nothing Gen 2 specific has been audited |
+| Autofixer / triage | works for Gen 2: issue #2928 (Gold League checkpoint) was filed, fixed (#2933) and replays offline with `pokerepro -bundle … -verify` using `POKEMON_GOLD_ROM`. Portable repro selects the ROM env by game |
 
 ## External blockers
 
@@ -81,6 +82,14 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
   them once the qualification corpus is mounted on the runner.
 - The prod wall could not reach Postgres on 2026-11-24, so live run history
   was not checked for this audit.
+
+## Local League replay without a corpus
+
+When only a farm failure checkpoint exists (no first-clear corpus), a
+throwaway test in `agent` can load the `.state`, then repeatedly run
+`ExecuteWithAdapter` on the first unmet League step (Will → … → Hall of Fame).
+After a League reset, start again from Will. Do not commit such harnesses or
+state files.
 
 ## Next tasks (in priority order)
 
@@ -96,3 +105,9 @@ Red run has been observed.** Do not call Gen 2 verified until one has.
 - 2026-11-24: audit; this tracker; Gen 2 goals (Kanto badges, 16 badges,
   full-game default), Gen 2 milestones, postgame spectator route line,
   Full E2E for Gold/Silver (PR #2950, merged). Dragon Fang full-bag deposit (PR #2951).
+- 2026-11-24 (later): the farm Postgres was down (`pokefarm_postgres` 0/1), so
+  no farm runs. Replayed the League locally from a real Gold checkpoint and
+  found two blockers: Gen 2 never used items in battle (Gen 1 ids were
+  hardcoded in the generic policy), and `skill.Battle` settlement pressed
+  through Lance's ending and credits. Both fixed; Gold reaches the Hall of
+  Fame.

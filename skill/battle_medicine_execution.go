@@ -57,14 +57,40 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 		return fmt.Errorf("skill: UseBattleMedicine: open item list on %s: %w",
 			battleRuntimeContext(runtimeDecoder.DecodeBattleRuntime(m)), err)
 	}
+	// Gold/Silver PACK remembers its last pocket; Bag carries the pocket.
+	if err := selectItemPocketWithDecoder(m, listDecoder, before.Bag[idx].Pocket); err != nil {
+		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
+	}
 	if err := selectScrollingListEntryWithDecoder(m, listDecoder, idx); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: select bag entry %d: %w", idx, err)
 	}
-	if _, err := m.StepUntil(itemUsePartyBudget, func(m *emu.Emu) bool {
+	// Some profiles (Gold/Silver BattlePack) ask USE/QUIT before the target
+	// menu. Confirm only a rendered prompt whose cursor is on USE.
+	field, _ := fieldItemDecoderFor(m)
+	usePrompt := func() bool {
+		if field == nil {
+			return false
+		}
+		prompt := field.DecodeFieldItem(m)
+		return prompt.UsePromptVisible && prompt.UseSelected
+	}
+	targetMenu := func() bool {
 		live := partyDecoder.DecodePartyMenu(m)
 		return live.Visible && live.Kind == game.PartyMenuItemUse
-	}); err != nil {
-		return fmt.Errorf("skill: UseBattleMedicine: medicine target menu did not open within %d frames", itemUsePartyBudget)
+	}
+	for confirms := 0; ; confirms++ {
+		if _, err := m.StepUntil(itemUsePartyBudget, func(*emu.Emu) bool {
+			return targetMenu() || usePrompt()
+		}); err != nil {
+			return fmt.Errorf("skill: UseBattleMedicine: medicine target menu did not open within %d frames", itemUsePartyBudget)
+		}
+		if targetMenu() {
+			break
+		}
+		if confirms >= 2 {
+			return fmt.Errorf("skill: UseBattleMedicine: USE prompt did not lead to the medicine target menu")
+		}
+		m.Tap(emu.A, 3, 7)
 	}
 	if err := SelectPartySlot(m, slot); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
@@ -85,7 +111,7 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 			if !effectObserved {
 				return fmt.Errorf("skill: UseBattleMedicine: item %#02x was consumed but slot %d showed no HP/status effect", item, slot)
 			}
-			return nil
+			return closeMedicineResult(m, partyDecoder, runtimeDecoder)
 		}
 		if !after.InBattle {
 			return fmt.Errorf("skill: UseBattleMedicine: battle ended before item %#02x consumption/effect was verified", item)
@@ -95,4 +121,23 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 	afterQty := resourcesDecoder.DecodeBattleResources(m).ItemQuantity(uint16(item))
 	return fmt.Errorf("skill: UseBattleMedicine: item %#02x did not complete within %d frames (bag %d -> %d, effect=%t)",
 		item, bagUseBudget, beforeQty, afterQty, effectObserved)
+}
+
+// closeMedicineResult waits for the target menu to close. Gold/Silver print
+// "… health returned." over the party screen; returning while it is up makes
+// the battle loop read it as an unbidden party menu and pick a slot. Only
+// text is advanced here; a party slot is never selected.
+func closeMedicineResult(m *emu.Emu, party game.PartyMenuDecoder, runtime game.BattleRuntimeDecoder) error {
+	start := m.FrameCount()
+	for int(m.FrameCount()-start) <= bagUseBudget {
+		if !party.DecodePartyMenu(m).Visible {
+			return nil
+		}
+		if runtime.DecodeBattleRuntime(m).TextActive {
+			m.Tap(emu.A, 3, 7)
+		} else {
+			m.StepFrame()
+		}
+	}
+	return fmt.Errorf("skill: UseBattleMedicine: medicine result screen did not close within %d frames", bagUseBudget)
 }
