@@ -92,6 +92,11 @@ func TestGSMtSilverAndRedRequireDifferentRetailEvents(t *testing.T) {
 		t.Fatalf("Mt. Silver/Red event index drift: got (%d,%d)", eventMtSilverOpened, eventMtSilverRedDisappeared)
 	}
 	for _, p := range []*Profile{NewGold(), NewSilver()} {
+		fresh := fakeGSReader{}
+		setGSEvent(fresh, eventMtSilverRedDisappeared) // InitialEvents hides Red
+		if p.DecodeFirstBadgeProgress(fresh).Has(ProgressMtSilverRedDefeated) {
+			t.Fatalf("%s: a new game's hidden Red must not count as beaten", p.ID())
+		}
 		mem := fakeGSReader{sym.KantoBadges: 0xff, sym.JohtoBadges: 0xff}
 		if p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverOpened) ||
 			p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverRedDefeated) {

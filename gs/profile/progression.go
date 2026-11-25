@@ -200,8 +200,8 @@ const (
 	eventKantoTrainersAtGym    uint16 = 1903
 	eventKantoBlueAtCinnabar   uint16 = 1909
 	eventKantoBlueAtViridian   uint16 = 1910
-	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
-	// after a retail battle win; it is cleared by the next Hall ceremony.
+	// EVENT_RED_IN_MT_SILVER is the visibility flag set by InitialEvents and
+	// by Red.disappear after a retail battle win; the Hall ceremony clears it.
 	eventMtSilverOpened         uint16 = 1871
 	eventMtSilverRedDisappeared uint16 = 1890
 	eventBeatEliteFour          uint16 = 68
@@ -384,7 +384,10 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		// Viridian, not merely be absent from an unrelated map.
 		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
 		{ID: ProgressMtSilverOpened, Complete: hasGSEvent(reader, eventMtSilverOpened)},
-		{ID: ProgressMtSilverRedDefeated, Complete: hasGSEvent(reader, eventMtSilverRedDisappeared)},
+		// InitialEvents also sets the Red flag (hidden until the Hall of
+		// Fame clears it); only after Oak opens Mt. Silver does it mean
+		// Red.disappear ran after a win.
+		{ID: ProgressMtSilverRedDefeated, Complete: hasGSEvent(reader, eventMtSilverOpened) && hasGSEvent(reader, eventMtSilverRedDisappeared)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

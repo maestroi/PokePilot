@@ -20,6 +20,7 @@ func TestGoldSilverMilestonesSeparateHallOfFameFromRed(t *testing.T) {
 			slices.Contains(obs.Milestones, "Red") {
 			t.Fatalf("%s: Hall of Fame milestones = %v", p.ID(), obs.Milestones)
 		}
+		setGSEvent(mem, eventMtSilverOpened)
 		setGSEvent(mem, eventMtSilverRedDisappeared)
 		mem[sym.KantoBadges] = 0xff
 		obs, err = p.DecodeObservation(mem, nil)
