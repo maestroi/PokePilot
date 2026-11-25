@@ -7,6 +7,14 @@ export interface PollingResourceOptions<T> {
   isEmpty?: (value: T) => boolean
 }
 
+// A failed poll retries on a short backoff (1s, 2s, 4s, …) capped at the
+// normal interval, so a brief upstream restart heals itself instead of
+// leaving the view on an error until the next slow poll.
+export function nextDelayMs(intervalMs: number, failures: number): number {
+  if (failures <= 0) return intervalMs
+  return Math.min(intervalMs, 1000 * 2 ** Math.min(failures - 1, 10))
+}
+
 export function usePollingResource<T>(
   load: (signal: AbortSignal) => Promise<T>,
   options: PollingResourceOptions<T> = {}
@@ -24,6 +32,7 @@ export function usePollingResource<T>(
   let enabled = false
   let requestID = 0
   let controller: AbortController | null = null
+  let failures = 0
 
   const state = computed<ResourceState>(() => {
     if (data.value === null && refreshing.value) return 'loading'
@@ -49,8 +58,10 @@ export function usePollingResource<T>(
       if (id !== requestID) return
       data.value = next
       lastUpdatedAt.value = Date.now()
+      failures = 0
     } catch (cause) {
       if (nextController.signal.aborted || id !== requestID) return
+      failures++
       error.value = cause instanceof Error ? cause.message : 'Request failed'
     } finally {
       if (id === requestID) refreshing.value = false
@@ -81,7 +92,7 @@ export function usePollingResource<T>(
     timer = setTimeout(() => {
       timer = null
       void refresh().then(schedule)
-    }, intervalMs())
+    }, nextDelayMs(intervalMs(), failures))
   }
 
   function start(): void {
