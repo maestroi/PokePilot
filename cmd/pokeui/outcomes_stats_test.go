@@ -113,7 +113,7 @@ func TestOutcomesStatsHandlerWarmsAfterBrowserRequestEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	first := httptest.NewRecorder()
 	handler.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/v1/stats", nil).WithContext(ctx))
-	if first.Code != http.StatusOK {
+	if first.Code != http.StatusServiceUnavailable {
 		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
 	}
 	if first.Header().Get("X-PokePilot-Stats-Warming") != "true" {
@@ -133,10 +133,11 @@ func TestOutcomesStatsHandlerWarmsAfterBrowserRequestEnds(t *testing.T) {
 	for {
 		res := httptest.NewRecorder()
 		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/stats", nil))
-		if res.Code != http.StatusOK {
+		warming := res.Header().Get("X-PokePilot-Stats-Warming") != ""
+		if !warming && res.Code != http.StatusOK {
 			t.Fatalf("follow-up status=%d body=%s", res.Code, res.Body.String())
 		}
-		if res.Header().Get("X-PokePilot-Stats-Warming") == "" {
+		if !warming {
 			var got farmOutcomeStats
 			if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)

@@ -197,14 +197,15 @@ func writeOutcomeStats(res http.ResponseWriter, payload []byte, stale bool) {
 	_, _ = res.Write(payload)
 }
 
+// writeOutcomeStatsWarming is a retryable 503, not an empty 200: zeroed stats
+// would render as real numbers until the next slow poll.
 func writeOutcomeStatsWarming(res http.ResponseWriter) {
-	payload, err := json.Marshal(farmOutcomeStats{})
-	if err != nil {
-		writeUnreachable(res)
-		return
-	}
+	res.Header().Set("Content-Type", "application/json")
+	res.Header().Set("Cache-Control", "no-store")
+	res.Header().Set("Retry-After", "2")
 	res.Header().Set("X-PokePilot-Stats-Warming", "true")
-	writeOutcomeStats(res, payload, true)
+	res.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(res).Encode(map[string]string{"error": "statistics warming up"})
 }
 
 func summarizeOutcomeStream(dec *json.Decoder) (farmOutcomeStats, error) {
