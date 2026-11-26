@@ -120,3 +120,48 @@ func TestLateJohtoIcePathHM07StandIsReachableFromBlackthornLadder(t *testing.T) 
 		t.Fatal("unexpected path onto wall staging tile (31,8)")
 	}
 }
+
+// New Bark's east Surf route reaches the plateau only through the badge gate
+// and Victory Road; the pinned graph must never shortcut that corridor.
+func TestLeagueApproachNativeTopologyRoutesThroughVictoryRoad(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := world.FindNativeRoute(graph, nativeID(t, "NEW_BARK_TOWN"), nativeID(t, "INDIGO_PLATEAU_POKECENTER_1F"))
+	if err != nil {
+		t.Fatalf("New Bark -> Indigo Plateau: %v", err)
+	}
+	var visited []uint16
+	for _, edge := range route {
+		visited = append(visited, edge.To)
+	}
+	want := []string{"ROUTE_26", "VICTORY_ROAD_GATE", "VICTORY_ROAD", "ROUTE_23", "INDIGO_PLATEAU_POKECENTER_1F"}
+	if len(visited) < len(want) {
+		t.Fatalf("League approach %+v skips part of %v", route, want)
+	}
+	tail := visited[len(visited)-len(want):]
+	for i, name := range want {
+		if tail[i] != nativeID(t, name) {
+			t.Fatalf("League approach leg %d reaches %#04x, want %s: %+v", i, tail[i], name, route)
+		}
+	}
+	for _, name := range []string{
+		"ROUTE_27", "TOHJO_FALLS", "ROUTE_26", "ROUTE_26_HEAL_HOUSE", "VICTORY_ROAD_GATE",
+		"VICTORY_ROAD", "ROUTE_23", "INDIGO_PLATEAU_POKECENTER_1F",
+	} {
+		header, err := provider.ParseMap(nativeID(t, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		blocks := make([]byte, int(header.WidthBlocks)*int(header.HeightBlocks))
+		if _, err := provider.Grid(header.ID, blocks, 0); err != nil {
+			t.Fatalf("%s live tileset grid: %v", name, err)
+		}
+	}
+	// TILESET_KANTO has 128 metatiles, like TILESET_JOHTO.
+	if table, ok := firstBadgeCollisionTable(0x03); !ok || len(table) != 512 {
+		t.Fatalf("Kanto collision table has %d bytes (supported=%v), want 512", len(table), ok)
+	}
+}

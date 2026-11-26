@@ -13,12 +13,14 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	mediasegment "github.com/maestroi/pokepilot/media/segment"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -289,6 +291,37 @@ func (e *replayRGBEncoder) Close() error {
 	return nil
 }
 
+type renderAttemptFunc func(ctx context.Context, attempt *preparedReplayAttempt, onStart func(replayVideoSegment), onReady func()) error
+
+// renderAttemptsConcurrently renders every attempt at once. Each attempt
+// replays from its own recorded start state, so attempts are independent and
+// a multi-attempt run is no longer serialized behind its longest attempt;
+// replayRenderSlots still bounds how many emulators run. Callers mutate shared
+// progress counters in onStart/onReady, so those are serialized here.
+func renderAttemptsConcurrently(ctx context.Context, attempts []preparedReplayAttempt, onStart func(replayVideoSegment), onReady func(), render renderAttemptFunc) error {
+	var mu sync.Mutex
+	start := func(segment replayVideoSegment) {
+		if onStart != nil {
+			mu.Lock()
+			defer mu.Unlock()
+			onStart(segment)
+		}
+	}
+	ready := func() {
+		if onReady != nil {
+			mu.Lock()
+			defer mu.Unlock()
+			onReady()
+		}
+	}
+	g, gctx := errgroup.WithContext(ctx)
+	for i := range attempts {
+		attempt := &attempts[i]
+		g.Go(func() error { return render(gctx, attempt, start, ready) })
+	}
+	return g.Wait()
+}
+
 func (s *replayServer) renderAttemptVideoSegments(
 	ctx context.Context,
 	runID string,
@@ -340,6 +373,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 
 	var encoder *replayRGBEncoder
 	var encoderSegment = -1
+	var segmentStarted time.Time
 	var segmentCtx context.Context
 	var segmentCancel context.CancelFunc
 	closeSegment := func() {
@@ -380,6 +414,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 			if onStart != nil {
 				onStart(*segment)
 			}
+			segmentStarted = time.Now()
 			segmentCtx, segmentCancel = withReplayTimeout(ctx, s.capacity.SegmentTimeout)
 			rawPath := segment.LocalPath
 			if mode == replayModeBroadcast {
@@ -405,6 +440,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 			return replayContextError(segmentCtx, err)
 		}
 		encoder = nil
+		emulated := time.Now()
 
 		if mode == replayModeBroadcast {
 			rawPath := segment.LocalPath + ".raw.mp4"
@@ -428,10 +464,12 @@ func (s *replayServer) renderAttemptVideoSegments(
 			}
 			_ = os.Remove(rawPath)
 		}
+		composed := time.Now()
 
 		if err := probeReplayVideo(segmentCtx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
 			return replayContextError(segmentCtx, fmt.Errorf("validate replay segment %d: %w", segment.Index, err))
 		}
+		probed := time.Now()
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
 			closeSegment()
@@ -452,6 +490,10 @@ func (s *replayServer) renderAttemptVideoSegments(
 		}
 		segment.Cached = true
 		closeSegment()
+		log.Printf("pokereplay segment run=%s mode=%s attempt=%d segment=%d emulate_ms=%d compose_ms=%d probe_ms=%d upload_ms=%d",
+			runID, mode, segment.Attempt, segment.Index,
+			emulated.Sub(segmentStarted).Milliseconds(), composed.Sub(emulated).Milliseconds(),
+			probed.Sub(composed).Milliseconds(), time.Since(probed).Milliseconds())
 		if onReady != nil {
 			onReady()
 		}

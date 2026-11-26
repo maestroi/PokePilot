@@ -178,7 +178,7 @@ func drainMediaTimelineArtifact(spec farm.Spec, reason string, endFrame uint64, 
 		}
 		if result.Objective.Kind == agent.KindGym {
 			timeline.Events = append(timeline.Events, farm.MediaEvent{
-				Type: "gym_battle", StartFrame: relativeMediaFrame(timing.StartFrame, origin), Frame: frame,
+				Type: "gym_battle", StartFrame: relativeMediaFrame(gymBattleStart(timing, battles), origin), Frame: frame,
 				Round: timing.Round, Objective: objective,
 				Summary: result.Summary, Evidence: fmt.Sprintf("outcome:%d:gym", i),
 			})
@@ -382,6 +382,19 @@ func checkpointRoundFromName(name string) (int, bool) {
 // Gym objectives already carry a gym_battle span. Progress objectives are the
 // adapter's required story fights, so their battles are boss_battle; anything
 // else is an ordinary trainer_battle.
+// gymBattleStart anchors a gym objective's footage on its last trainer battle,
+// the one that decides the badge, rather than on the walk in and the gym's
+// other trainers. Without an observed battle it keeps the objective start.
+func gymBattleStart(timing agent.ObjectiveTiming, battles []mediaBattleSpan) uint64 {
+	start := timing.StartFrame
+	for _, span := range battles {
+		if span.StartFrame >= timing.StartFrame && span.EndFrame <= timing.Frame {
+			start = span.StartFrame
+		}
+	}
+	return start
+}
+
 func appendBattleMediaEvents(timeline *farm.MediaTimeline, origin uint64, res *agent.Result, battles []mediaBattleSpan) {
 	for bi, span := range battles {
 		eventType, objective, round := "trainer_battle", "", 0

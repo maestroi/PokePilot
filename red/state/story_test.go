@@ -88,9 +88,9 @@ func TestDecodeStoryFactsLeftLeagueVoidsRoomProgress(t *testing.T) {
 	setTestEvent(&mem, eventAutowalkedIntoLoreleisRoom)
 	setTestEvent(&mem, eventBeatLorelei)
 	setTestEvent(&mem, eventBeatLance)
-	mem[elite4FlagsAddr] |= elite4StartedMask
+	mem[elite4FlagsAddr] |= 1 << 1 // BIT_STARTED_ELITE_4
 
-	mem[sym.CurMap] = lancesRoomMap
+	mem[sym.CurMap] = 0x71 // LANCES_ROOM
 	if got := DecodeStoryFacts(&mem, InventoryState{}); !got.LeagueChallengeStarted || !got.LeagueLanceDefeated {
 		t.Fatalf("progress inside the gauntlet must hold: %+v", got)
 	}

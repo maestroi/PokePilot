@@ -16,8 +16,16 @@ type LLMCall struct {
 	Objective         Objective
 	Plan              Plan
 	Strategic         bool
-	Err               error
-	Duration          time.Duration
+	// Model/Backend/PromptHash identify the actual endpoint and prompt contract
+	// for this call, including transport failover (not just the run default).
+	Model      string
+	Backend    string
+	PromptHash string
+	// Exact prompt that this call sent; populated only on training opt-in.
+	TrainingSystem string
+	TrainingUser   string
+	Err            error
+	Duration       time.Duration
 }
 
 // LLMRoute is the endpoint used for the most recent ask and the number of
@@ -39,6 +47,9 @@ type FailoverPlanner struct {
 	Primary  *LLMPlanner
 	Fallback *LLMPlanner
 	OnCall   func(LLMCall)
+	// RecordChoiceMenus retains full menus for offline training only when
+	// the run explicitly opted in; normal runs keep their prior memory cost.
+	RecordChoiceMenus bool
 
 	// lastBackend/lastModel describe only the most recent ask, for Route()
 	// reporting; they do not steer where the next ask starts.
@@ -96,6 +107,9 @@ func (p *FailoverPlanner) askPlan(obs Observation, offered []Objective, reason s
 
 func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered []Objective, reason string, retry *Retry) (Plan, error, bool) {
 	beforeTransport := active.Health.Transport
+	if active.CaptureTrainingPrompts {
+		active.LastTrainingSystem, active.LastTrainingUser = "", ""
+	}
 	start := time.Now()
 	var (
 		plan Plan
@@ -107,13 +121,22 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 		plan, err = active.StrategizeRetry(obs, offered, reason, *retry)
 	}
 	if p.OnCall != nil {
+		var menu []string
+		if p.RecordChoiceMenus {
+			menu = objectiveStrings(offered)
+		}
 		p.OnCall(LLMCall{
 			Observation:       obs,
 			Offered:           len(offered),
-			OfferedObjectives: objectiveStrings(offered),
+			OfferedObjectives: menu,
 			ReplanReason:      reason,
 			Plan:              plan,
 			Strategic:         true,
+			Model:             active.Model,
+			Backend:           p.lastBackend,
+			PromptHash:        active.StrategicPromptHash(),
+			TrainingSystem:    active.LastTrainingSystem,
+			TrainingUser:      active.LastTrainingUser,
 			Err:               err,
 			Duration:          time.Since(start),
 		})
@@ -145,6 +168,9 @@ func (p *FailoverPlanner) ask(obs Observation, offered []Objective, retry *Retry
 
 func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Objective, retry *Retry) (Objective, error, bool) {
 	beforeTransport := active.Health.Transport
+	if active.CaptureTrainingPrompts {
+		active.LastTrainingSystem, active.LastTrainingUser = "", ""
+	}
 	start := time.Now()
 	var (
 		o   Objective
@@ -156,12 +182,22 @@ func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Ob
 		o, err = active.NextRetry(obs, offered, *retry)
 	}
 	if p.OnCall != nil {
+		var menu []string
+		if p.RecordChoiceMenus {
+			menu = objectiveStrings(offered)
+		}
 		p.OnCall(LLMCall{
-			Observation: obs,
-			Offered:     len(offered),
-			Objective:   o,
-			Err:         err,
-			Duration:    time.Since(start),
+			Observation:       obs,
+			Offered:           len(offered),
+			OfferedObjectives: menu,
+			Objective:         o,
+			Model:             active.Model,
+			Backend:           p.lastBackend,
+			PromptHash:        active.PromptHash(),
+			TrainingSystem:    active.LastTrainingSystem,
+			TrainingUser:      active.LastTrainingUser,
+			Err:               err,
+			Duration:          time.Since(start),
 		})
 	}
 	return o, err, active.Health.Transport > beforeTransport

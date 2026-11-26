@@ -640,11 +640,14 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 			}
 		}
 	}
-	for i := range attempts {
-		if err := s.renderAttemptVideoSegments(ctx, runID, replayModeBroadcast, &attempts[i], onStart, onReady); err != nil {
-			setError(fmt.Errorf("attempt %d highlights: %w", attempts[i].Recording.Attempt, err))
-			return
+	if err := renderAttemptsConcurrently(ctx, attempts, onStart, onReady, func(ctx context.Context, attempt *preparedReplayAttempt, onStart func(replayVideoSegment), onReady func()) error {
+		if err := s.renderAttemptVideoSegments(ctx, runID, replayModeBroadcast, attempt, onStart, onReady); err != nil {
+			return fmt.Errorf("attempt %d highlights: %w", attempt.Recording.Attempt, err)
 		}
+		return nil
+	}); err != nil {
+		setError(err)
+		return
 	}
 
 	if jobID != "" {

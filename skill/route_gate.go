@@ -27,9 +27,15 @@ func (e *ErrRouteGateClosed) Error() string {
 // again. Measured: the Saffron gate guards ask for a drink from the Celadon
 // Department Store before letting the player through; walking into any of
 // them before that reads "Oh wait there, the road's closed." every time.
+// Route 22 Gate's Boulder Badge guard pages "I can't let you pass" and pushes
+// the player south (pokered/text/Route22Gate.asm); without this match Travel
+// burned three same-box recoveries as text_box_loop
+// (run-21a180fnt0cmdmv37zchvhxg) before the semantic edge gate could steer
+// the planner.
 func knownClosedRouteGateText(text string) bool {
 	normalized := strings.ToLower(strings.Join(strings.Fields(text), " "))
-	return strings.Contains(normalized, "the road's closed")
+	return strings.Contains(normalized, "the road's closed") ||
+		strings.Contains(normalized, "i can't let you pass")
 }
 
 // AnswerKnownRouteGate answers a choice only when the active travel/interact

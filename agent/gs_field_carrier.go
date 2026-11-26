@@ -33,6 +33,8 @@ func gsProgressFieldCapabilities(id ProgressID) []CapabilityID {
 		return []CapabilityID{CapabilityID(game.FieldMoveSurf)}
 	case gsprofile.ProgressRisingBadgeEarned:
 		return []CapabilityID{CapabilityID(game.FieldMoveSurf), CapabilityID(game.FieldMoveWhirlpool)}
+	case gsprofile.ProgressIndigoPlateauReached:
+		return []CapabilityID{CapabilityID(game.FieldMoveSurf)}
 	default:
 		return nil
 	}

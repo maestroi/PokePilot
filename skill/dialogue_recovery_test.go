@@ -468,27 +468,38 @@ func TestTravelDetectsSameBoxLoop(t *testing.T) {
 // whole recovery budget re-reading the identical notice (run
 // run-27upfk3ik8i8f1o0c895fgojf7, round 18, ROUTE_5_GATE); it must instead
 // stop after the first recovery with the typed outcome.
+//
+// Route 22 Gate's Boulder Badge refusal is the same shape: paging
+// "I can't let you pass" never opens the north exit
+// (run-21a180fnt0cmdmv37zchvhxg).
 func TestTravelStopsOnKnownClosedRouteGate(t *testing.T) {
-	var gotos int
-	goTo := func() error {
-		gotos++
-		return ErrDialogueInterrupted
-	}
-	recoverBox := func() DialogueRecoveryResult {
-		return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: "Oh wait there, the road's closed."}
-	}
+	for _, text := range []string{
+		"Oh wait there, the road's closed.",
+		"The rules are rules. I can't let you pass.",
+	} {
+		t.Run(text, func(t *testing.T) {
+			var gotos int
+			goTo := func() error {
+				gotos++
+				return ErrDialogueInterrupted
+			}
+			recoverBox := func() DialogueRecoveryResult {
+				return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: text}
+			}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
+			res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
 
-	var gate *ErrRouteGateClosed
-	if !errors.As(err, &gate) {
-		t.Fatalf("err = %v, want *ErrRouteGateClosed", err)
-	}
-	if gotos != 1 {
-		t.Fatalf("GoTo called %d times, want 1 (no retry against a known-closed gate)", gotos)
-	}
-	if res.Dialogues != 1 {
-		t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+			var gate *ErrRouteGateClosed
+			if !errors.As(err, &gate) {
+				t.Fatalf("err = %v, want *ErrRouteGateClosed", err)
+			}
+			if gotos != 1 {
+				t.Fatalf("GoTo called %d times, want 1 (no retry against a known-closed gate)", gotos)
+			}
+			if res.Dialogues != 1 {
+				t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+			}
+		})
 	}
 }
 
@@ -665,5 +676,27 @@ func TestRecoverDialogueRefusesAMenu(t *testing.T) {
 		if op == "tap" {
 			t.Fatalf("ops = %v: input sent into a menu", f.ops)
 		}
+	}
+}
+
+// TestDismissMenuIntoQueuedBattle is run-txqow0d2vz1p: Yellow opened START by
+// itself after the Route 4 -> Mt Moon 1F warp, and the wild encounter queued
+// behind it started the frame B closed the menu. The menu is gone and the
+// battle belongs to Travel's battle path, so the dismissal must succeed
+// instead of failing closed and reporting the stale menu as a choice.
+func TestDismissMenuIntoQueuedBattle(t *testing.T) {
+	mem := newFakeRAM()
+	openMenu(mem, 2, 1, "POKEDEX")
+	f := &fakeClock{mem: mem, closesOnTap: true, onClose: func(m *state.Mem) {
+		m[sym.IsInBattle] = 1
+		m[sym.CurOpponent] = 7
+	}}
+
+	ok, err := dismissMenuOn(f)
+	if err != nil || !ok {
+		t.Fatalf("dismissMenuOn = %v, %v; want true, nil", ok, err)
+	}
+	if f.taps != 1 {
+		t.Fatalf("taps = %d, want exactly one B", f.taps)
 	}
 }

@@ -88,11 +88,22 @@ const (
 // the first owned action is Travel back into the eastern corridor, so Centers
 // are admitted by the place registry rather than grown one hub per farm
 // failure.
+//
+// Every standard Gen-I mart is the same class of service building: inventory
+// recovery and economy restocks leave the player at a counter, and Yellow
+// offers this verb without a map-slice gate. A post-Flute restock at Viridian
+// Mart (run-2i346bo3t06eg3kgpd6btbrmvk, map 0x2a) must still Travel into the
+// eastern corridor rather than fail as unknown. Admit marts via the recovery
+// target list rather than growing the corridor allowlist one shop per farm
+// failure.
 func FuchsiaProgressionAvailable(mapID uint8) bool {
 	if PokemonTowerAvailable(mapID) {
 		return true
 	}
 	if knownPokemonCenterMap(mapID) {
+		return true
+	}
+	if knownMartMap(mapID) {
 		return true
 	}
 	switch mapID {

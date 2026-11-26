@@ -862,17 +862,21 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			}
 		}
 	}
-	for index := range attempts {
-		var renderErr error
+	renderErr := renderAttemptsConcurrently(ctx, attempts, onStart, onReady, func(ctx context.Context, attempt *preparedReplayAttempt, onStart func(replayVideoSegment), onReady func()) error {
+		var err error
 		if mode == replayModeSemantic {
-			renderErr = s.renderAttemptSemanticSegments(ctx, &attempts[index], onStart, onReady)
+			err = s.renderAttemptSemanticSegments(ctx, attempt, onStart, onReady)
 		} else {
-			renderErr = s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady)
+			err = s.renderAttemptVideoSegments(ctx, runID, mode, attempt, onStart, onReady)
 		}
-		if renderErr != nil {
-			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, renderErr))
-			return
+		if err != nil {
+			return fmt.Errorf("attempt %d: %w", attempt.Recording.Attempt, err)
 		}
+		return nil
+	})
+	if renderErr != nil {
+		setError(renderErr)
+		return
 	}
 
 	if jobID != "" {

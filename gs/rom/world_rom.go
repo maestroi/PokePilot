@@ -63,5 +63,12 @@ func (p *romWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmodel.Tra
 	if p == nil || p.grids == nil {
 		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: nil world provider")
 	}
+	if len(blocks) == 0 {
+		static, err := mapBlockData(p.rom, mapID)
+		if err != nil {
+			return worldmodel.NativeGridSpec{}, err
+		}
+		blocks = static
+	}
 	return p.grids.Grid(mapID, blocks, mode)
 }

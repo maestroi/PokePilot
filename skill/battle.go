@@ -112,7 +112,20 @@ type BattleOptions struct {
 	HoldTrainingLead      bool
 	MinTrainingCarryLevel uint8
 	Sequence              BattleSequenceContext
+	// YieldWhen hands the live battle back to the caller at the next main
+	// menu where it reports true, returning ErrBattleYielded. Capture
+	// weakening uses it to stop attacking and start throwing balls.
+	YieldWhen func(game.BattleState) bool
+	// CallerOwnsAftermath returns the result at the battle boundary without
+	// settling. For one-way scripts (a Champion's ending) whose aftermath
+	// never returns control, the caller drives the scene to its own
+	// cartridge event instead of letting settlement press through credits.
+	CallerOwnsAftermath bool
 }
+
+// ErrBattleYielded reports that BattleOptions.YieldWhen returned control with
+// the battle still in progress at its main menu.
+var ErrBattleYielded = errors.New("skill: Battle: yielded to caller at the main menu")
 
 func Battle(m *emu.Emu, policy MovePolicy) (game.BattleResult, error) {
 	return BattleWithOptions(m, policy, BattleOptions{})
@@ -237,6 +250,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// the loss as a win.
 			result := battleDecoder.DecodeBattleResult(m)
 			observeBattleResult(m, result)
+			if options.CallerOwnsAftermath {
+				return result, nil
+			}
 			err := settleAfterBattle(m, runtimeDecoder)
 			if errors.Is(err, errBattleRestarted) {
 				continue
@@ -313,6 +329,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			})
 
 		case execution.Phase == game.BattleExecutionMainMenu:
+			if options.YieldWhen != nil && inBattle && options.YieldWhen(bs) {
+				return 0, ErrBattleYielded
+			}
 			if openingTrainingSwitch {
 				if inBattle {
 					decision := chooseTrainingCarrySwitchState(m.ROM(), resources, bs, options.MinTrainingCarryLevel)

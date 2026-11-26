@@ -23,6 +23,8 @@ const (
 	capCanBoardSSAnne             gameruntime.CapabilityID = "can_board_ss_anne"
 	capCanLeaveViridianNorth      gameruntime.CapabilityID = "can_leave_viridian_north"
 	capCanLeavePewterEast         gameruntime.CapabilityID = "can_leave_pewter_east"
+	capCanPassRoute22Gate         gameruntime.CapabilityID = "can_pass_route22_gate"
+	capCanEnterCeruleanCave       gameruntime.CapabilityID = "can_enter_cerulean_cave"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 	capCanEnterViridianGym        gameruntime.CapabilityID = "can_enter_viridian_gym"
 )
@@ -89,6 +91,15 @@ const (
 	vermilionDockWarpX1      uint8 = 18
 	vermilionDockWarpX2      uint8 = 19
 
+	// Route 22 Gate's north exits onto Route 23. The Boulder Badge guard
+	// fires on the approach tiles at y=2 (pokered/scripts/Route22Gate.asm)
+	// and pushes the player south when the badge is absent; the reverse
+	// Route 23 -> gate edge stays ordinary so a party already on Route 23
+	// can always leave.
+	route22GateNorthWarpY  uint8 = 0
+	route22GateNorthWarpX1 uint8 = 4
+	route22GateNorthWarpX2 uint8 = 5
+
 	// The ladder out of Mt. Moon B2F's fossil corridor
 	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
 	mtMoonB2FMap       uint8 = 0x3D
@@ -124,6 +135,15 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 	if state.DecodeProgress(mem).Has(state.BadgeBoulder) {
 		caps[capCanLeavePewterEast] = true
+		// Same durable badge opens Route 22 Gate's north exit onto Route 23
+		// (pokered/scripts/Route22Gate.asm). Keep a dedicated capability so
+		// reachability names the missing gate rather than Pewter's east road.
+		caps[capCanPassRoute22Gate] = true
+	}
+	if state.MainStoryComplete(mem) {
+		// The Hall of Fame script hides the Cerulean Cave guard
+		// (pokered/scripts/HallOfFame.asm, TOGGLE_CERULEAN_CAVE_GUY).
+		caps[capCanEnterCeruleanCave] = true
 	}
 	if facts.MtMoonFossilAcquired {
 		caps[capCanExitMtMoon] = true
@@ -270,6 +290,23 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// guard as a gate on the forward warp so reachability can explain why
 		// the ship is inaccessible instead of repeatedly walking into text.
 		t := semanticTransition("red:ss_anne_ticket", edge, capCanBoardSSAnne)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticCeruleanCityMap && edge.To == ceruleanCave1FMap && edge.Kind == world.EdgeWarp:
+		// The cave guard blocks the entrance until the Hall of Fame; the
+		// reverse edge stays ordinary so a save inside can always leave.
+		t := semanticTransition("red:cerulean_cave_guard", edge, capCanEnterCeruleanCave)
+		t.Gate = true
+		return t, true
+	case edge.From == route22GateMap && edge.To == route23Map &&
+		edge.Kind == world.EdgeWarp && edge.WarpY == route22GateNorthWarpY &&
+		(edge.WarpX == route22GateNorthWarpX1 || edge.WarpX == route22GateNorthWarpX2):
+		// Route 22 Gate's north warps are present in the ROM graph before Brock
+		// is beaten. The guard at y=2 prints "I can't let you pass" and pushes
+		// the player south (run-21a180fnt0cmdmv37zchvhxg). Gate the forward
+		// edge so "go to route 23" reports the Boulder Badge prerequisite
+		// instead of looping on that text box until stagnation.
+		t := semanticTransition("red:route22_gate_boulder", edge, capCanPassRoute22Gate)
 		t.Gate = true
 		return t, true
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
@@ -440,7 +477,14 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// PortBypass alone is not seam creation: Route 9's Cut bridge and
 				// the Snorlax clears skip source canExit but still cross the one
 				// real band.
-				if edge.Kind == world.EdgeConnection && !transitionCreatesSeam(transition) && !g.ConnectionExitWalkable(edge) {
+				//
+				// Gates are different: they constrain whether the edge may be
+				// used at all. Skipping them on proven-unwalkable padding leaves
+				// those bands as free map-adjacency for mapsConnected, so a
+				// Diglett's Cave Hyper Potion restock treated Saffron Mart as a
+				// two-hop ErrRouteReplanRequired lure past a completed Fuchsia
+				// route (run-aqbnxwh5p4i4hqy3h80mcvc / triage bfda8e7f35489e76).
+				if edge.Kind == world.EdgeConnection && !transitionCreatesSeam(transition) && !g.ConnectionExitWalkable(edge) && !transition.Gate {
 					continue
 				}
 				// The Route 23 actions own the three Surf bands only. Neither may
@@ -605,11 +649,8 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	g, err = withAsleepRoute16Snorlax(g, romData, &mem)
+	g, err = withGen1StaticRouteTopology(g, romData, &mem)
 	if err != nil {
-		return nil, err
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
@@ -659,10 +700,7 @@ func GrassHabitatReachable(m *emu.Emu, romData []byte) (func(mapID uint8) bool, 
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
-		return nil, err
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+	if g, err = withGen1StaticRouteTopology(g, romData, &mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
@@ -694,10 +732,7 @@ func CatchHabitatBlock(m *emu.Emu, romData []byte, mapID uint8) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
-		return nil
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+	if g, err = withGen1StaticRouteTopology(g, romData, &mem); err != nil {
 		return nil
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)

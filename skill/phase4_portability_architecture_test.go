@@ -189,6 +189,7 @@ var redOwnedStoryPolicyExceptions = fileSet(
 	"progression.go",
 	"route_semantics.go",
 	"victory_road_stages.go",
+	"save_game.go",
 )
 
 func fileSet(names ...string) map[string]bool {

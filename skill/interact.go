@@ -247,6 +247,10 @@ func Talk(m *emu.Emu) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	prev := state.ScreenText(&mem)
+	battlePending := func(mem *state.Mem) bool {
+		return mem.U8(sym.CurOpponent) != 0 || mem.U8(sym.IsInBattle) != 0
+	}
+page:
 	for m.Peek8(sym.FontLoaded) != 0 {
 		if presses >= talkPressBudget {
 			return presses, fmt.Errorf("skill: Talk: text box still open after %d A presses", presses)
@@ -279,14 +283,30 @@ func Talk(m *emu.Emu) (int, error) {
 	// on the Mt. Moon fossil pickup (run-2y4141hnsdqiz2viev38nfu77z,
 	// round-038): 274 frames from box-close to controllable. Wait rather
 	// than asserting on the very next frame.
+	//
+	// A static encounter or trainer queues its battle from that dialogue
+	// (wCurOpponent) and starts it after the box closes, so the player never
+	// becomes controllable: that is the same "talk started a battle" outcome
+	// as a battle before any box (Moltres on Victory Road 2F).
+	//
+	// A map script can also chain its own dialogue after the box: delivering
+	// Oak's parcel closes Oak's box, then OaksLabRivalArrivesAtOaksRequestScript
+	// opens the rival's "Gramps!" box, which waits for A (triage:6bc111cb5abe2d9a).
+	// A new box before control returns is more dialogue to page, not a stall.
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
 		if _, err := m.StepUntil(talkPostBoxSettle, func(m *emu.Emu) bool {
 			state.Snapshot(m, &mem)
-			return state.Controllable(&mem)
+			return state.Controllable(&mem) || battlePending(&mem) || m.Peek8(sym.FontLoaded) != 0
 		}); err != nil {
 			return presses, fmt.Errorf("skill: Talk: not controllable %d frames after the box closed", talkPostBoxSettle)
 		}
+		if !battlePending(&mem) && !state.Controllable(&mem) {
+			goto page
+		}
+	}
+	if battlePending(&mem) {
+		return presses, ErrTalkStartedBattle
 	}
 	return presses, nil
 }

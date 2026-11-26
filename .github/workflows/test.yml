@@ -36,6 +36,11 @@ jobs:
         working-directory: web
         run: npm run build
 
+      - name: Verify planner dataset exporter (no ROM or GPU)
+        run: |
+          python3 -m compileall -q scripts/planner_training
+          python3 -m unittest discover -s scripts/planner_training -p 'test_*.py' -v
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

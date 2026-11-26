@@ -45,7 +45,9 @@ func TestBestKnownTrainingPlaceRejectsUnsafeHighLevelArea(t *testing.T) {
 		safe:    {current},
 		danger:  {current},
 	}})
-	known.TrainingAreas[safe] = TrainingAreaKnowledge{Location: safe, Place: "route 10", MinLevel: 13, MaxLevel: 15}
+	// Route 10's band sits strictly below the L12 lead so direct training stays
+	// legal; Victory Road remains above the L20 backup's carry floor.
+	known.TrainingAreas[safe] = TrainingAreaKnowledge{Location: safe, Place: "route 10", MinLevel: 5, MaxLevel: 10}
 	known.TrainingAreas[danger] = TrainingAreaKnowledge{Location: danger, Place: "victory road", MinLevel: 38, MaxLevel: 42}
 
 	obs := Observation{
@@ -120,7 +122,7 @@ func TestTravelProviderPreservesBestTrainingAreaThroughJourneyCap(t *testing.T) 
 	known.Adjacency[training] = []LocationID{current}
 	known.Visited[current], known.Visited[training] = true, true
 	destinations = append(destinations, CatalogDestination{Place: "zz training", Location: training})
-	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "zz training", MinLevel: 20, MaxLevel: 24}
+	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "zz training", MinLevel: 16, MaxLevel: 20}
 
 	obs := Observation{
 		Location:   PlaceID(current),
@@ -153,7 +155,7 @@ func TestCombatPreparationTravelsToBestKnownTrainingArea(t *testing.T) {
 		current:  {training},
 		training: {current},
 	}})
-	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 13, MaxLevel: 15}
+	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 5, MaxLevel: 10}
 	lost := Objective{Kind: KindGym, Place: "pewter gym"}
 	known.Failures[combatLossFailureKey(lost)] = Failure{
 		Objective: lost.String(), Times: 1, ReadinessBaseline: 48, ReadinessTarget: 68,

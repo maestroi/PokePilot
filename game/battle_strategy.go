@@ -123,3 +123,19 @@ type BattleCombatStrategyProfile interface {
 	GameProfile
 	BattleCombatStrategy
 }
+
+// BattleCaptureStatus is the optional generation capability naming moves that
+// inflict a status the capture formula rewards (sleep, paralysis) on this
+// defender. Like BattleDamageBound it serves capture weakening only.
+type BattleCaptureStatus interface {
+	CaptureStatusMove(romData []byte, defender BattleCombatant, nativeMoveID uint16) bool
+}
+
+// BattleDamageBound is the optional generation capability that bounds one
+// move's worst-case damage: the top damage roll, a critical hit and every hit
+// of a multi-hit move. Capture weakening attacks a one-time target only with
+// moves this proves cannot knock it out. ok is false when the move's damage
+// has no safe bound (self-destruct, OHKO, locked-in or reflected damage).
+type BattleDamageBound interface {
+	MaxCombatDamage(romData []byte, attacker, defender BattleCombatant, nativeMoveID uint16) (damage uint16, ok bool)
+}

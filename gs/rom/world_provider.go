@@ -915,6 +915,7 @@ var firstBadgeTopology = []mapSpec{
 }
 
 type firstBadgeWorldProvider struct {
+	rom   []byte
 	ids   []uint16
 	specs map[uint16]mapSpec
 }
@@ -922,11 +923,10 @@ type firstBadgeWorldProvider struct {
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
 // for the verified early-Johto slice from a fresh save through Ecruteak.
 //
-// romData is accepted so the profile-facing constructor stays stable while
-// NewWorldProvider owns the full ROM parse. The current slice uses generated
-// catalog identities plus decomp-verified topology facts.
+// romData supplies static blockdata when Grid is asked without a live buffer
+// (connection landing checks against the neighbouring map). Live routing still
+// passes the settled overworld blocks for the map the player is standing on.
 func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeGridProvider {
-	_ = romData
 	all := make([]mapSpec, 0, len(firstBadgeTopology)+len(lateJohtoTopology))
 	all = append(all, firstBadgeTopology...)
 	all = append(all, lateJohtoTopology...)
@@ -942,7 +942,7 @@ func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeGridProvider {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return &firstBadgeWorldProvider{ids: ids, specs: specs}
+	return &firstBadgeWorldProvider{rom: romData, ids: ids, specs: specs}
 }
 
 func (p *firstBadgeWorldProvider) MapIDs() []uint16 {
