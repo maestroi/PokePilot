@@ -434,11 +434,12 @@ func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) 
 func resolveDirectTrainingBattle(m *emu.Emu, policy MovePolicy) (battleResolution, error) {
 	options := BattleOptions{HoldTrainingLead: true}
 	var offense trainingLeadOffense
+	var race trainingDamageRace
 	if strategy, err := combatStrategyForROM(m.ROM()); err == nil {
 		romData := m.ROM()
 		options.YieldWhen = func(b game.BattleState) bool {
 			offense = evaluateTrainingLeadOffense(strategy, romData, b)
-			return !offense.effective
+			return !offense.effective || race.lost(b)
 		}
 	}
 	outcome, err := BattleWithOptions(m, policy, options)
@@ -457,6 +458,36 @@ func resolveDirectTrainingBattle(m *emu.Emu, policy MovePolicy) (battleResolutio
 		return battleResolution{fled: true}, ErrTrainLeadSpent
 	}
 	return battleResolution{fled: true}, nil
+}
+
+// trainingDamageRace compares the HP each side has actually lost since the
+// lead's first turn in one wild battle. "Can damage" is not "can win": a L7
+// Zubat's Leech Life takes 1 HP per turn off a Route 2 Pidgey that hits back
+// for about 5, so the held lead fought to a blackout every session and combat
+// preparation commuted Pewter <-> Route 2 for 400 rounds
+// (run-1lr7kwvnvn52m1msa6de9nskdu). Net observed HP includes drain, misses
+// and the opponent's real moves, which the overworld cannot know. The race is
+// lost when, at the observed rates, the lead faints before the opponent:
+// enemyHP/dealt > leadHP/taken.
+type trainingDamageRace struct {
+	started             bool
+	leadStart, foeStart uint16
+}
+
+func (r *trainingDamageRace) lost(b game.BattleState) bool {
+	if !r.started {
+		r.started, r.leadStart, r.foeStart = true, b.ActiveHP, b.EnemyHP
+		return false
+	}
+	if b.ActiveHP >= r.leadStart {
+		return false
+	}
+	taken := uint32(r.leadStart - b.ActiveHP)
+	var dealt uint32
+	if b.EnemyHP < r.foeStart {
+		dealt = uint32(r.foeStart - b.EnemyHP)
+	}
+	return uint32(b.EnemyHP)*taken > uint32(b.ActiveHP)*dealt
 }
 
 // trainingLeadOffense classifies the active lead's moves against the live
