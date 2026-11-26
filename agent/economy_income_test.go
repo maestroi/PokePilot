@@ -8,14 +8,14 @@ import (
 )
 
 // run-d6dokr184ky81 (88/139): post-Champion, every trainer beaten, ¥192, only
-// a MASTER BALL and nothing sellable that covers five balls. The League
-// rematch is the only way to raise money again.
+// a MASTER BALL and nothing left to sell. The League rematch is the only way
+// to raise money again; while any surplus sale exists it goes first.
 func TestIncomeObjectivesOfferLeagueRematchWhenSalesCannotFund(t *testing.T) {
 	obs := Observation{
 		Money:        192,
 		RestockStock: []string{"pokeball"},
 		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
-		Bag:          []Item{{Name: "master ball", Quantity: 1}, {Name: "guard spec", Quantity: 1}},
+		Bag:          []Item{{Name: "master ball", Quantity: 1}},
 		Story:        ProgressState{{ID: ProgressMainStoryComplete, Complete: true}},
 	}
 	sources := redObjectiveCatalog(obs).IncomeSources
@@ -34,13 +34,16 @@ func TestIncomeObjectivesOfferLeagueRematchWhenSalesCannotFund(t *testing.T) {
 		t.Fatalf("after a loss: offers = %+v blocked = %+v, want the rematch withheld", got, blocked)
 	}
 
-	// A covering sale is cheaper and safer than a rematch.
-	obs.Bag = append(obs.Bag, Item{Name: "nugget", Quantity: 1})
-	if got, _ := incomeObjectives(obs, nil, sources); len(got) != 0 {
-		t.Fatalf("rematch offered although a NUGGET sale covers the shortfall: %+v", got)
+	// Surplus sales are cheaper and safer than a rematch, even partial ones.
+	for _, surplus := range []string{"nugget", "guard spec"} {
+		withSurplus := obs
+		withSurplus.Bag = append(append([]Item(nil), obs.Bag...), Item{Name: surplus, Quantity: 1})
+		if got, _ := incomeObjectives(withSurplus, nil, sources); len(got) != 0 {
+			t.Fatalf("rematch offered although a %s sale comes first: %+v", surplus, got)
+		}
 	}
 	// Funded runs and pre-Hall-of-Fame saves get no rematch.
-	obs.Bag = append(obs.Bag[:2], Item{Name: "pokeball", Quantity: minimumCaptureStock})
+	obs.Bag = append(obs.Bag[:1:1], Item{Name: "pokeball", Quantity: minimumCaptureStock})
 	if got, _ := incomeObjectives(obs, nil, sources); len(got) != 0 {
 		t.Fatalf("rematch offered to a stocked run: %+v", got)
 	}

@@ -645,7 +645,7 @@ func fundingSurplusCategory(name string, category InventoryCategory) bool {
 }
 
 // incomeObjectives offers the adapter's repeatable income sources when a
-// required spend is unfunded and no bag sale covers it: run-d6dokr184ky81 sat
+// required spend is unfunded and no surplus sale is left: run-d6dokr184ky81 sat
 // post-Champion with every trainer beaten, ¥192 and no balls, so a sale could
 // only delay the same dead end. A source the party already lost to stays
 // withheld until readiness changes, like any lost challenge.

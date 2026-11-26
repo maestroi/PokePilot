@@ -151,8 +151,8 @@ func setTestEvent(mem *Mem, event Event) {
 // stage to true; the attempt view must report the current gauntlet instead.
 func TestDecodeLeagueAttemptFactsIgnoresHallOfFameBit(t *testing.T) {
 	var mem Mem
-	mem[elite4FlagsAddr] |= elite4CompletedMask | elite4StartedMask
-	mem[sym.CurMap] = brunosRoomMap
+	mem[elite4FlagsAddr] |= elite4CompletedMask | 1<<1 // BIT_STARTED_ELITE_4
+	mem[sym.CurMap] = 0xF6                             // BRUNOS_ROOM
 	setTestEvent(&mem, eventAutowalkedIntoLoreleisRoom)
 	setTestEvent(&mem, eventBeatLorelei)
 
