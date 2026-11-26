@@ -342,6 +342,14 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		}
 		return OutcomeCompleted, nil
 
+	case KindEarnMoney:
+		if final.Money <= initial.Money {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but money did not increase (%d -> %d)",
+				ErrObjectivePostconditionFailed, o, initial.Money, final.Money)
+		}
+		return OutcomeCompleted, nil
+
 	case KindSell:
 		before := bagItemQuantity(initial.Bag, o.Item)
 		after := bagItemQuantity(final.Bag, o.Item)
