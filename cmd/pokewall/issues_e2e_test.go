@@ -173,7 +173,19 @@ func TestIssueHandoffEndToEnd(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "state.json")
 	w := NewWall(dumps)
 	w.SetStatePath(stateFile)
-	w.SetIssueClient(newIssueClient(aoSrv.URL, e2eProject, e2eUI, time.Second))
+	// This test drives status sync explicitly. Own the dispatcher lifetime so
+	// it cannot persist state after the temporary directory is removed.
+	w.issues = newIssueClient(aoSrv.URL, e2eProject, e2eUI, time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.runOutboxDispatcherContext(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 	srv := httptest.NewServer(w.Handler())
 	t.Cleanup(srv.Close)
 	client := farm.NewClient(srv.URL)

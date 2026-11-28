@@ -237,11 +237,29 @@ func (w *Wall) SetIssueClient(c *issueClient) {
 }
 
 func (w *Wall) runOutboxDispatcher() {
+	w.runOutboxDispatcherContext(context.Background())
+}
+
+// runOutboxDispatcherContext lets callers stop and join the dispatcher
+// before removing its state directory. In-flight dispatches finish normally.
+func (w *Wall) runOutboxDispatcherContext(ctx context.Context) {
+	wait := func(delay time.Duration) bool {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return true
+		}
+	}
 	backoff := time.Second
-	for {
+	for ctx.Err() == nil {
 		e, ok := w.nextOutbox()
 		if !ok {
-			time.Sleep(time.Second)
+			if !wait(time.Second) {
+				return
+			}
 			backoff = time.Second
 			continue
 		}
@@ -249,12 +267,14 @@ func (w *Wall) runOutboxDispatcher() {
 			retryable := isRetryableIssueError(err)
 			w.noteOutboxResult(e.ExternalID, err, retryable)
 			if retryable {
-				time.Sleep(backoff)
+				if !wait(backoff) {
+					return
+				}
 				if backoff < 30*time.Second {
 					backoff *= 2
 				}
-			} else {
-				time.Sleep(time.Second)
+			} else if !wait(time.Second) {
+				return
 			}
 			continue
 		}
