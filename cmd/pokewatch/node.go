@@ -50,9 +50,15 @@ func nodeReport(host, root string, mounts []string, ledgerPath, ladder string, p
 	return r
 }
 
+// blockedFresh bounds how long a spent key keeps the blocked-keys alert open.
+// The ledger is append-only, so without it the alert never resolves.
+const blockedFresh = 7 * 24 * time.Hour
+
 // fixerSummary mirrors the retired farm-watch.sh: paid/free starts in the
 // rolling 24h and the keys the ladder refuses. The paid cap is passed as
 // unlimited to BlockedKeys so a capped day does not mark every key blocked.
+// A parked key is a verdict, not work, and a key the fixer has not touched
+// in blockedFresh is history; neither is reported.
 func fixerSummary(rows []deploy.LedgerRow, tiers []deploy.LadderTier, paidCap int, now time.Time) operatorapi.FixerSummary {
 	s := operatorapi.FixerSummary{PaidCap: paidCap}
 	paid := map[string]bool{}
@@ -77,6 +83,14 @@ func fixerSummary(rows []deploy.LedgerRow, tiers []deploy.LadderTier, paidCap in
 			s.PRs24h++
 		}
 	}
-	s.BlockedKeys = deploy.BlockedKeys(rows, tiers, map[string]int{}, available, 1_000_000, now)
+	last := map[string]deploy.LedgerRow{}
+	for _, r := range rows {
+		last[r.Key] = r
+	}
+	for _, k := range deploy.BlockedKeys(rows, tiers, map[string]int{}, available, 1_000_000, now) {
+		if r := last[k]; r.Event != "parked" && now.Sub(r.At) < blockedFresh {
+			s.BlockedKeys = append(s.BlockedKeys, k)
+		}
+	}
 	return s
 }

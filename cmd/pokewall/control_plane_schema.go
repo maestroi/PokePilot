@@ -269,6 +269,8 @@ func controlPlaneFor(w *Wall) *controlPlane {
 	return nil
 }
 
+const controlPlaneConnectWait = 3 * time.Minute
+
 func (w *Wall) SetControlPlaneDatabase(dsn string) error {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
@@ -283,15 +285,18 @@ func (w *Wall) SetControlPlaneDatabase(dsn string) error {
 	}
 	db.SetMaxOpenConns(16)
 	db.SetMaxIdleConns(4)
+	// Outlast a Postgres restart and the rollout's 60s update monitor: an
+	// early exit while the database is briefly down (DNS "no such host")
+	// reads as a crash-looping image, rolls the wall back and freezes deploys.
 	var pingErr error
-	for attempt := 0; attempt < 20; attempt++ {
+	for deadline := time.Now().Add(controlPlaneConnectWait); ; {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		pingErr = db.PingContext(ctx)
 		cancel()
-		if pingErr == nil {
+		if pingErr == nil || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 	}
 	if pingErr != nil {
 		_ = db.Close()

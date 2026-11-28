@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,6 +91,11 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if archiveDefaultPage(r.URL.Query()) {
+		c.serveDefaultPage(w, r)
+		return
+	}
+
 	// Existing outcome/mode/starter filters still run in the compatibility
 	// dashboard. Remove only pagination so every additional filter and sort is
 	// applied to the complete matching history before slicing the requested page.
@@ -100,6 +106,11 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 	query.Del("offset")
 	clonedURL.RawQuery = query.Encode()
 	clone.URL = &clonedURL
+	// The index pass covers the whole finished history, so it asks for lean
+	// rows; full rows are loaded below for the requested page only.
+	clone.Header = r.Header.Clone()
+	clone.Header.Set(archiveIndexHeader, "1")
+	clone.Header.Del(archiveRunsHeader)
 
 	recorder := httptest.NewRecorder()
 	c.fallback.ServeHTTP(recorder, clone)
@@ -165,7 +176,7 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 	if limit > 0 && offset+limit < end {
 		end = offset + limit
 	}
-	paged := filtered[offset:end]
+	paged := c.fullArchiveRows(clone, filtered[offset:end])
 
 	runs := make([]any, 0, len(paged))
 	for _, run := range paged {
@@ -180,6 +191,83 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 	document["runs"] = runs
 	document["total"] = total
 	writeJSON(w, http.StatusOK, document)
+}
+
+// archiveDefaultPage reports a newest-first page with no archive-only filter,
+// sort or facets: exactly the order the history store already pages by
+// (ended_at DESC), so it needs no full-history pass. Live and Media poll this
+// shape; scanning every finished row for it exceeded the operator proxy
+// timeout once history lived in PostgreSQL.
+func archiveDefaultPage(q url.Values) bool {
+	for _, key := range []string{"search", "game", "model", "deployment", "goal", "play_style", "compute", "experiment"} {
+		if strings.TrimSpace(q.Get(key)) != "" {
+			return false
+		}
+	}
+	sortKey := strings.ToLower(strings.TrimSpace(q.Get("sort")))
+	direction := strings.ToLower(strings.TrimSpace(q.Get("direction")))
+	return !queryBool(q.Get("success")) && !queryBool(q.Get("facets")) &&
+		(sortKey == "" || sortKey == "finished") && (direction == "" || direction == "desc")
+}
+
+func (c *archiveController) serveDefaultPage(w http.ResponseWriter, r *http.Request) {
+	recorder := httptest.NewRecorder()
+	c.fallback.ServeHTTP(recorder, r)
+	var document map[string]any
+	if recorder.Code < 200 || recorder.Code >= 300 || json.Unmarshal(recorder.Body.Bytes(), &document) != nil {
+		copyRecorder(w, recorder)
+		return
+	}
+	rawRuns, _ := document["runs"].([]any)
+	for _, raw := range rawRuns {
+		if run, ok := raw.(map[string]any); ok {
+			c.enrichRuntime(run)
+			if stats, ok := run["stats"].(map[string]any); ok {
+				delete(stats, "strategic_records")
+			}
+		}
+	}
+	if _, ok := document["total"]; !ok {
+		document["total"] = len(rawRuns)
+	}
+	writeJSON(w, http.StatusOK, document)
+}
+
+// fullArchiveRows replaces lean index rows with the complete rows for one
+// page. A fallback that ignores archiveRunsHeader returns its usual rows, so
+// matching by run id keeps this correct; a missing run keeps its index row.
+func (c *archiveController) fullArchiveRows(index *http.Request, page []map[string]any) []map[string]any {
+	if len(page) == 0 {
+		return page
+	}
+	ids := make([]string, 0, len(page))
+	for _, run := range page {
+		ids = append(ids, archiveString(run["run_id"]))
+	}
+	req := index.Clone(index.Context())
+	req.Header.Del(archiveIndexHeader)
+	req.Header.Set(archiveRunsHeader, strings.Join(ids, ","))
+	recorder := httptest.NewRecorder()
+	c.fallback.ServeHTTP(recorder, req)
+	var document struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	if recorder.Code < 200 || recorder.Code >= 300 || json.Unmarshal(recorder.Body.Bytes(), &document) != nil {
+		return page
+	}
+	byID := make(map[string]map[string]any, len(document.Runs))
+	for _, run := range document.Runs {
+		byID[archiveString(run["run_id"])] = run
+	}
+	out := make([]map[string]any, len(page))
+	for i, run := range page {
+		out[i] = run
+		if full, ok := byID[ids[i]]; ok {
+			c.enrichRuntime(full)
+			out[i] = full
+		}
+	}
+	return out
 }
 
 func archivePage(r *http.Request) (limit, offset int, errMessage string) {

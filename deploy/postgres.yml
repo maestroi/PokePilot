@@ -12,7 +12,10 @@
 # scheduled on an unlabeled worker and never uses a Swarm named volume.
 
 configs:
+  # Swarm configs are immutable: bump the name when the SQL changes, or the
+  # whole stack deploy aborts on the rejected config update.
   postgres_control_plane_init:
+    name: pokefarm_postgres_control_plane_init_v2
     file: ./postgres/001_control_plane.sql
 
 services:
@@ -44,7 +47,9 @@ services:
         constraints:
           - node.labels.pokepilot.db == true
       restart_policy:
-        condition: on-failure
+        # PostgreSQL exits 0 when it shuts itself down (e.g. an invalid
+        # postmaster.pid); on-failure would leave the control plane down.
+        condition: any
         delay: 5s
         max_attempts: 10
         window: 2m

@@ -116,6 +116,11 @@ type BattleOptions struct {
 	// menu where it reports true, returning ErrBattleYielded. Capture
 	// weakening uses it to stop attacking and start throwing balls.
 	YieldWhen func(game.BattleState) bool
+	// CallerOwnsAftermath returns the result at the battle boundary without
+	// settling. For one-way scripts (a Champion's ending) whose aftermath
+	// never returns control, the caller drives the scene to its own
+	// cartridge event instead of letting settlement press through credits.
+	CallerOwnsAftermath bool
 }
 
 // ErrBattleYielded reports that BattleOptions.YieldWhen returned control with
@@ -245,6 +250,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// the loss as a win.
 			result := battleDecoder.DecodeBattleResult(m)
 			observeBattleResult(m, result)
+			if options.CallerOwnsAftermath {
+				return result, nil
+			}
 			err := settleAfterBattle(m, runtimeDecoder)
 			if errors.Is(err, errBattleRestarted) {
 				continue

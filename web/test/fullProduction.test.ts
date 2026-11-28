@@ -135,3 +135,11 @@ test('browser cancellation does not create uploads', async () => {
   await assert.rejects(runFullE2E(t.api, { ...t.options, signal: controller.signal }), /Stopped coordinating/)
   assert.equal(t.calls.length, 0)
 })
+
+test('Gen2 full E2E needs Red on Mt. Silver, not the Hall of Fame', () => {
+  const gen2 = (extra: Partial<DashboardRun> = {}) => champ({ game: 'pokemon-gold', goal: 'progress:gs_mt_silver_red_defeated', ...extra })
+  assert.equal(isVerifiedChampion(gen2()), true)
+  assert.equal(isVerifiedChampion(gen2({ goal: 'elite-four' })), false)
+  assert.equal(isVerifiedChampion(gen2({ stats: {}, player: { milestones: ['Hall of Fame'], party: [] } })), false)
+  assert.equal(isVerifiedChampion(gen2({ stats: {}, player: { milestones: ['Hall of Fame', 'Red'], party: [] } })), true)
+})

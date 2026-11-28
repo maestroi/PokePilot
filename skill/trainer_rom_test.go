@@ -30,6 +30,29 @@ func TestTrainerStatusRoute3AndStoryLeader(t *testing.T) {
 	}
 }
 
+// UnbeatenTrainerPrize funds a broke run (run-d6dokr184ky81): a fresh Route 3
+// pays, and once its trainers are beaten the total drops to zero.
+func TestUnbeatenTrainerPrizeRoute3(t *testing.T) {
+	e := fixture.Load(t, "post_starter")
+	var mem state.Mem
+	state.Snapshot(e, &mem)
+
+	fresh := skill.UnbeatenTrainerPrize(e.ROM(), &mem, 0x0e)
+	if fresh == 0 {
+		t.Fatal("fresh Route 3 reported no unbeaten trainer prize")
+	}
+	single, err := skill.TrainerStatusAt(e.ROM(), &mem, 0x0e, 10, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0xc000; i < 0xe000; i++ {
+		mem[i] = 0xff // every event flag set: every trainer beaten
+	}
+	if got := skill.UnbeatenTrainerPrize(e.ROM(), &mem, 0x0e); got != 0 || single.PrizeMoney == 0 {
+		t.Fatalf("all-beaten Route 3 prize = %d (single trainer prize %d), want 0", got, single.PrizeMoney)
+	}
+}
+
 func TestChallengeTrainerExplicitInteractionAndIdempotence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("ROM-backed trainer journey")
