@@ -460,6 +460,11 @@ func (c *githubClient) findIssue(ctx context.Context, fingerprint, externalID st
 			if len(issue.PullRequest) != 0 && string(issue.PullRequest) != "null" {
 				continue
 			}
+			// A duplicate closure retires this report, not the underlying failure.
+			// Continue to the canonical issue rather than reopening the duplicate.
+			if strings.EqualFold(issue.State, "closed") && strings.EqualFold(issue.StateReason, "duplicate") {
+				continue
+			}
 			if strings.Contains(issue.Body, extMarker) || strings.Contains(issue.Body, fpMarker) {
 				return issue, true, nil
 			}
