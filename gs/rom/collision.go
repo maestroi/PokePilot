@@ -398,11 +398,12 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F",
 		// pret maps.asm: switch-room entrances use TILESET_ELITE_FOUR_ROOM so
 		// city-exit block $1c decodes as COLL_WARP_CARPET_DOWN, not floor.
-		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES":
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"WILLS_ROOM", "KOGAS_ROOM", "BRUNOS_ROOM", "KARENS_ROOM":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
-	case "OLIVINE_GYM":
+	case "OLIVINE_GYM", "LANCES_ROOM":
 		return 0x11, true
 	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
 		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
@@ -418,7 +419,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"TOHJO_FALLS", "VICTORY_ROAD":
 		return 0x15, true
 	case "ICE_PATH_1F", "ICE_PATH_B1F", "ICE_PATH_B2F_MAHOGANY_SIDE",
-		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F":
+		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F", "HALL_OF_FAME":
 		return 0x1a, true
 	case "ILEX_FOREST":
 		return 0x1c, true
@@ -501,10 +502,27 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	if !ok {
 		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: tileset %#02x has no collision table", tileset)
 	}
+	return buildGen2Grid(p.rom, mapID, info, spec.name, tileset, table, blocks, mode)
+}
 
+// buildGen2Grid projects a map's blocks through its tileset collision table.
+func buildGen2Grid(rom []byte, mapID uint16, info gsdata.MapInfo, name string, tileset uint8, table []uint8,
+	blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
 	widthBlocks, heightBlocks := int(info.WidthBlocks), int(info.HeightBlocks)
+	if len(blocks) == 0 {
+		// Nil/empty blocks mean "use the cartridge's static map": connection
+		// approach needs the neighbour's landing seam without standing there.
+		if len(rom) == 0 {
+			return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s needs live blocks or a ROM for static blockdata", name)
+		}
+		static, err := mapBlockData(rom, mapID)
+		if err != nil {
+			return worldmodel.NativeGridSpec{}, err
+		}
+		blocks = static
+	}
 	if len(blocks) != widthBlocks*heightBlocks {
-		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", spec.name, len(blocks), widthBlocks*heightBlocks)
+		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", name, len(blocks), widthBlocks*heightBlocks)
 	}
 	width, height := widthBlocks*2, heightBlocks*2
 	out := worldmodel.NativeGridSpec{}
@@ -534,7 +552,7 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 			if block != 0 {
 				index := int(block)*4 + (x & 1) + 2*(y&1)
 				if index >= len(table) {
-					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", spec.name, block, index, tileset, len(table))
+					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", name, block, index, tileset, len(table))
 				}
 				collision = table[index]
 			}

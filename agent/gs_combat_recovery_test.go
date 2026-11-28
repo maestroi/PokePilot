@@ -27,6 +27,7 @@ func gsMortyRecoveryObservation(id game.GameID) Observation {
 			{ID: gsprofile.ProgressHM01CutAcquired, Complete: true},
 			{ID: gsprofile.ProgressTM02HeadbuttAcquired, Complete: true},
 			{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true},
+			{ID: gsprofile.ProgressRadioCardReceived, Complete: true},
 			{ID: gsprofile.ProgressSquirtBottleAcquired, Complete: true},
 			{ID: gsprofile.ProgressSudowoodoCleared, Complete: true},
 			{ID: gsprofile.ProgressTM08RockSmashAcquired, Complete: true},
@@ -166,6 +167,7 @@ func TestGSCombatRecoveryStopsLeadGrindAtReadinessCeiling(t *testing.T) {
 				{ID: gsprofile.ProgressHM01CutAcquired, Complete: true},
 				{ID: gsprofile.ProgressTM02HeadbuttAcquired, Complete: true},
 				{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressRadioCardReceived, Complete: true},
 				{ID: gsprofile.ProgressSquirtBottleAcquired, Complete: true},
 				{ID: gsprofile.ProgressSudowoodoCleared, Complete: true},
 				{ID: gsprofile.ProgressTM08RockSmashAcquired, Complete: true},
@@ -297,7 +299,6 @@ func TestGSRecoveryTrainAndHealAreNativeOnly(t *testing.T) {
 	}
 	for _, o := range []Objective{
 		{Kind: KindTrain, Level: 39, Slot: 1},
-		{Kind: KindTrain, Level: 61},
 		{Kind: KindTrain, Level: 39, Species: "meganium"},
 		{Kind: KindHeal, Place: "violet city"},
 	} {

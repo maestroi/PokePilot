@@ -2,9 +2,17 @@ import { computed, onMounted, onScopeDispose, ref, shallowRef } from 'vue'
 import type { ResourceState } from '../resource'
 
 export interface PollingResourceOptions<T> {
-  intervalMs?: number
+  intervalMs?: number | (() => number)
   immediate?: boolean
   isEmpty?: (value: T) => boolean
+}
+
+// A failed poll retries on a short backoff (1s, 2s, 4s, …) capped at the
+// normal interval, so a brief upstream restart heals itself instead of
+// leaving the view on an error until the next slow poll.
+export function nextDelayMs(intervalMs: number, failures: number): number {
+  if (failures <= 0) return intervalMs
+  return Math.min(intervalMs, 1000 * 2 ** Math.min(failures - 1, 10))
 }
 
 export function usePollingResource<T>(
@@ -16,13 +24,15 @@ export function usePollingResource<T>(
   const refreshing = ref(false)
   const lastUpdatedAt = ref<number | null>(null)
 
-  const intervalMs = Math.max(1000, options.intervalMs ?? 5000)
+  const intervalMs = () => Math.max(1000, typeof options.intervalMs === 'function' ? options.intervalMs() : (options.intervalMs ?? 5000))
   const immediate = options.immediate ?? true
   const isEmpty = options.isEmpty ?? (() => false)
 
-  let timer: ReturnType<typeof setInterval> | null = null
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let enabled = false
   let requestID = 0
   let controller: AbortController | null = null
+  let failures = 0
 
   const state = computed<ResourceState>(() => {
     if (data.value === null && refreshing.value) return 'loading'
@@ -48,8 +58,10 @@ export function usePollingResource<T>(
       if (id !== requestID) return
       data.value = next
       lastUpdatedAt.value = Date.now()
+      failures = 0
     } catch (cause) {
       if (nextController.signal.aborted || id !== requestID) return
+      failures++
       error.value = cause instanceof Error ? cause.message : 'Request failed'
     } finally {
       if (id === requestID) refreshing.value = false
@@ -60,14 +72,11 @@ export function usePollingResource<T>(
     return refresh(true)
   }
 
-  function start(): void {
-    if (timer !== null) return
-    if (immediate && data.value === null) void refresh()
-    timer = setInterval(() => void refresh(), intervalMs)
-  }
-
-  function stop(): void {
-    if (timer !== null) clearInterval(timer)
+  // Suspending a background tab also aborts its in-flight poll, so hidden
+  // dashboards do not compete with the active operator view for wall/API work.
+  // Data is intentionally retained and refreshed when the tab becomes visible.
+  function suspend(): void {
+    if (timer !== null) clearTimeout(timer)
     timer = null
     requestID++
     controller?.abort()
@@ -75,8 +84,49 @@ export function usePollingResource<T>(
     refreshing.value = false
   }
 
-  onMounted(start)
-  onScopeDispose(stop)
+  // Schedule the next poll after the current one completes. This keeps slow
+  // endpoints from accumulating overlapping requests, and allows a view to
+  // choose a different cadence without creating a second polling resource.
+  function schedule(): void {
+    if (!enabled || document.hidden || timer !== null) return
+    timer = setTimeout(() => {
+      timer = null
+      void refresh().then(schedule)
+    }, nextDelayMs(intervalMs(), failures))
+  }
+
+  function start(): void {
+    enabled = true
+    if (document.hidden) return
+    if (immediate && data.value === null) void refresh().then(schedule)
+    else schedule()
+  }
+
+  function stop(): void {
+    enabled = false
+    suspend()
+  }
+
+  function onVisibilityChange(): void {
+    if (!enabled) return
+    if (document.hidden) {
+      suspend()
+      return
+    }
+    start()
+    // Restore live state promptly after returning, rather than waiting for
+    // the next interval. start() already fetched an empty immediate resource.
+    if (data.value !== null || !immediate) void refresh()
+  }
+
+  onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    start()
+  })
+  onScopeDispose(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    stop()
+  })
 
   return {
     data,
@@ -90,3 +140,5 @@ export function usePollingResource<T>(
     stop
   }
 }
+
+export type PollingResource<T> = ReturnType<typeof usePollingResource<T>>

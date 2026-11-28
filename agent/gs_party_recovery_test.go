@@ -1,11 +1,47 @@
 package agent
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	gsdata "github.com/maestroi/pokepilot/gs/data"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
+
+// TestGSPokecenterCounterMatchesROMGrid guards triage:2bb48288867cac27:
+// Indigo Plateau healed from the generic (3,3), which is a wall in its lobby.
+func TestGSPokecenterCounterMatchesROMGrid(t *testing.T) {
+	path := os.Getenv("POKEMON_GOLD_ROM")
+	if path == "" {
+		t.Skip("set POKEMON_GOLD_ROM to check center tiles against the live grid")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := gsrom.NewRuntimeWorldProvider(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range append([]string{"INDIGO_PLATEAU_POKECENTER_1F", "BLACKTHORN_POKECENTER_1F"}, gsOwnedPokecenterNames...) {
+		center, err := gsOpeningMapID(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		grid, err := provider.Grid(center, nil, worldmodel.TraversalMode(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		walkable := func(x, y uint8) bool { return grid.Walkable[int(y)*grid.Width+int(x)] }
+		cx, cy := gsPokecenterCounter(center)
+		if walkable(cx, cy) || !walkable(cx, cy+1) {
+			t.Errorf("%s: counter (%d,%d) walkable=%v, stand (%d,%d) walkable=%v",
+				name, cx, cy, walkable(cx, cy), cx, cy+1, walkable(cx, cy+1))
+		}
+	}
+}
 
 func TestGSPokecenterStandFacesCounter(t *testing.T) {
 	if gsPokecenterStandX != gsPokecenterCounterX || int(gsPokecenterStandY) != int(gsPokecenterCounterY)+1 {
@@ -23,7 +59,7 @@ func TestGSOwnedPokecenterPrefersSameMapGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := gsOwnedPokecenterID(azaleaGym)
+	got, err := gsOwnedPokecenterID(nil, azaleaGym)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +72,7 @@ func TestGSOwnedPokecenterPrefersSameMapGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err = gsOwnedPokecenterID(violet)
+	got, err = gsOwnedPokecenterID(nil, violet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +88,7 @@ func TestGSOwnedPokecenterIsNearestNotFirstInGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := gsOwnedPokecenterID(route37)
+	got, err := gsOwnedPokecenterID(nil, route37)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +117,7 @@ func TestGSCoastalRecoveryPrefersReachableNearbyCenters(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := gsOwnedPokecenterID(from)
+			got, err := gsOwnedPokecenterID(nil, from)
 			if err != nil {
 				t.Fatal(err)
 			}

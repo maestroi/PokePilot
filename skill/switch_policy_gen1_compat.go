@@ -2,6 +2,7 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -36,6 +37,7 @@ func gen1BattleResourcesFromMem(mem *state.Mem) game.BattleResourcesState {
 		ActiveSlot: int(mem.U8(sym.PlayerMonNumber)),
 		Party:      make([]game.BattlePartyMon, 0, len(party.Mons)),
 		Bag:        make([]game.InventoryItem, 0, len(inventory.Items)),
+		Medicines:  gen1.Medicines,
 	}
 	for _, mon := range party.Mons {
 		p := game.BattlePartyMon{

@@ -72,6 +72,32 @@ const (
 	gen2ObjectMovementTypeOffset      = 0x03
 )
 
+// gen2StationaryMovement lists SPRITEMOVEDATA_* types that never leave their
+// tile (pokegold constants/map_object_constants.asm): STILL, STANDING_*, and
+// the in-place spinners.
+var gen2StationaryMovement = map[byte]bool{
+	0x01: true, 0x06: true, 0x07: true, 0x08: true, 0x09: true,
+	0x03: true, 0x0a: true, 0x1e: true, 0x1f: true,
+	0x15: true, 0x20: true, 0x21: true, // big dolls (Snorlax)
+}
+
+// gen2BigDollMovement are the BIGDOLL* movement types (Vermilion's sleeping
+// Snorlax). Their sprite data sets the big-object flag, so the engine's
+// collision covers a 2x2 square anchored at the object's tile.
+var gen2BigDollMovement = map[byte]bool{0x15: true, 0x20: true, 0x21: true}
+
+// gen2BigObjectTiles returns the three extra tiles a big object occupies.
+func gen2BigObjectTiles(slot, x, y int, movement byte) []game.LiveMapObject {
+	if !gen2BigDollMovement[movement] {
+		return nil
+	}
+	return []game.LiveMapObject{
+		{Slot: slot, X: x + 1, Y: y, Stationary: true},
+		{Slot: slot, X: x, Y: y + 1, Stationary: true},
+		{Slot: slot, X: x + 1, Y: y + 1, Stationary: true},
+	}
+}
+
 func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[int]game.MapPoint) {
 	objects := make([]game.LiveMapObject, 0, sym.NumObjectStructs-1)
 	positions := make(map[int]game.MapPoint)
@@ -95,12 +121,33 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 		if reader.Peek8(base) == gen2SpriteRock {
 			clearable = game.FieldMoveRockSmash
 		}
+		movement := reader.Peek8(base + gen2ObjectMovementTypeOffset)
 		objects = append(objects, game.LiveMapObject{
 			Slot: slot, X: x, Y: y, Clearable: clearable,
-			Pushable: reader.Peek8(base) == gen2SpriteBoulder &&
-				reader.Peek8(base+gen2ObjectMovementTypeOffset) == gen2StrengthBoulderMovement,
+			Pushable:   reader.Peek8(base) == gen2SpriteBoulder && movement == gen2StrengthBoulderMovement,
+			Stationary: gen2StationaryMovement[movement],
 		})
+		objects = append(objects, gen2BigObjectTiles(slot, x, y, movement)...)
 		positions[slot] = game.MapPoint{X: x, Y: y}
+	}
+	// Object structs exist only for objects near the screen. A standing NPC
+	// off screen still blocks its tile; without it routing oscillates
+	// between two corridors whose blockers are never visible together
+	// (Route 13's Pokéfan Joshua and Bird Keeper Perry). wMapObjects keeps
+	// every object's tile; wObjectMasks hides the ones that are not there.
+	for i := 1; i < sym.NumMapObjects; i++ {
+		base := sym.MapObjects + uint16(i*sym.MapObjectLen)
+		if _, loaded := positions[i]; loaded || reader.Peek8(sym.ObjectMasks+uint16(i)) != 0 ||
+			reader.Peek8(base+1) == 0 || !gen2StationaryMovement[reader.Peek8(base+4)] {
+			continue
+		}
+		rawY, rawX := reader.Peek8(base+2), reader.Peek8(base+3)
+		if rawX < 4 || rawY < 4 {
+			continue
+		}
+		movement := reader.Peek8(base + 4)
+		objects = append(objects, game.LiveMapObject{Slot: i, X: int(rawX) - 4, Y: int(rawY) - 4, Stationary: true})
+		objects = append(objects, gen2BigObjectTiles(i, int(rawX)-4, int(rawY)-4, movement)...)
 	}
 	return objects, positions
 }
@@ -108,7 +155,7 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 // DecodeLiveTopology exposes the mutable half of Gen-II routing: current map
 // blocks, traversal mode and active object positions. Static warps/connections
 // remain owned by the native world provider.
-func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyState, error) {
+func (p *Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyState, error) {
 	if reader == nil {
 		return game.LiveTopologyState{}, fmt.Errorf("gs profile: nil routing memory reader")
 	}
@@ -136,5 +183,34 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 		LiveObjects:     objects,
 		ObjectPositions: positions,
 		HiddenObjects:   map[int]bool{},
+		ScriptBarriers:  p.gen2ScriptBarriers(reader),
 	}, nil
+}
+
+// gen2BicycleItem is BICYCLE in pokegold constants/item_constants.asm.
+const gen2BicycleItem = 0x07
+
+// gen2BicycleGates are the Cycling Road gates whose coord events
+// (Route16GateBicycleCheck, Route17Route18GateBicycleCheck) run
+// `checkitem BICYCLE` and push the player back without one.
+var gen2BicycleGates = map[string][]game.MapPoint{
+	"ROUTE_16_GATE":          {{X: 5, Y: 4}, {X: 5, Y: 5}},
+	"ROUTE_17_ROUTE_18_GATE": {{X: 5, Y: 4}, {X: 5, Y: 5}},
+}
+
+func (p *Profile) gen2ScriptBarriers(reader game.MemoryReader) []game.MapPoint {
+	info, ok := gsdata.Map(gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber)))
+	if !ok {
+		return nil
+	}
+	gate := gen2BicycleGates[info.Name]
+	if gate == nil {
+		return nil
+	}
+	for _, item := range p.DecodeInventory(reader).Items {
+		if item.NativeItemID == gen2BicycleItem {
+			return nil
+		}
+	}
+	return gate
 }

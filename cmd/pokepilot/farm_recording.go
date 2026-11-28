@@ -209,6 +209,9 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		report.Artifacts = checkpointArtifacts
 	}
 	report.Artifacts = appendRAMForensics(report.Artifacts, checkpointDir, report.RunID)
+	if err := appendFarmTrainingArtifact(&report, spec, checkpointDir); err != nil {
+		log.Printf("farm: %s: omit training corpus: %v", report.RunID, err)
+	}
 	if runContextArtifact, err := farm.NewRunContextArtifact(spec); err != nil {
 		log.Printf("farm: %s: run context telemetry: %v", report.RunID, err)
 	} else {

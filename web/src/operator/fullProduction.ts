@@ -2,6 +2,7 @@ import type {
   DashboardRun, RunSpec, ReplayStatus, StudioAssessment, StudioEditStatus, StudioPackage,
   StudioPublicationCandidate, StudioThumbnailList, YouTubePublishStatus
 } from '../shared/api/types'
+import { GEN2_FULL_GAME_GOAL, fullGameGoal } from './newRunMode.ts'
 
 // One browser-driven E2E coordinator. All expensive work executes on existing
 // farm/replay workers; switching tabs stops this coordinator, not those jobs.
@@ -56,6 +57,8 @@ export interface FullE2EAPI {
 export interface FullE2EOptions {
   runID: string
   fresh: boolean
+  // Defaults to Pokémon Red; Gold/Silver play through Red on Mt. Silver.
+  game?: string
   starter: string
   seed: number
   deployment: string
@@ -72,11 +75,19 @@ function hash(value: string | undefined, what: string): string {
   return value
 }
 
+// Verified completion of the cartridge's whole game: Red's Hall of Fame, or
+// Red on Mt. Silver for Gold/Silver (their Hall of Fame is not the end).
 export function isVerifiedChampion(run: DashboardRun | null | undefined): boolean {
-  if (!run || run.game !== 'pokemon-red' || run.status !== 'done' || run.reason !== 'done') return false
-  if (!['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion'].includes((run.goal || '').toLowerCase().trim())) return false
-  const hall = (run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m))
-  return run.stats?.goal_complete === true || hall
+  if (!run || run.status !== 'done' || run.reason !== 'done') return false
+  const goal = (run.goal || '').toLowerCase().trim()
+  const milestones = run.player?.milestones || []
+  if (run.game === 'pokemon-gold' || run.game === 'pokemon-silver') {
+    if (goal !== GEN2_FULL_GAME_GOAL) return false
+    return run.stats?.goal_complete === true || milestones.some(m => m.trim().toLowerCase() === 'red')
+  }
+  if (run.game !== 'pokemon-red') return false
+  if (!['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion'].includes(goal)) return false
+  return run.stats?.goal_complete === true || milestones.some(m => /hall[ _]of[ _]fame/i.test(m))
 }
 
 function abortCheck(signal: AbortSignal): void {
@@ -122,11 +133,14 @@ export async function runFullE2E(api: FullE2EAPI, options: FullE2EOptions): Prom
     throw new Error('Timed out waiting for ' + label)
   }
   try {
-    mark('game', 'Complete the full campaign', options.fresh ? 'Launching Pokémon Red' : 'Checking the selected run')
+    const game = options.game || 'pokemon-red'
+    const goal = game === 'pokemon-red' ? 'elite-four' : fullGameGoal(game)
+    if (!goal) throw new Error('Full E2E does not support ' + game)
+    mark('game', 'Complete the full campaign', options.fresh ? 'Launching ' + game : 'Checking the selected run')
     if (options.fresh) {
       await checked(() => api.createRun({
-        run_id: id, seed: options.seed, game: 'pokemon-red', planner: 'llm',
-        starter: options.starter, dest: '', goal: 'elite-four', llm_profile: '',
+        run_id: id, seed: options.seed, game, planner: 'llm',
+        starter: options.starter, dest: '', goal, llm_profile: '',
         llm_deployment: options.deployment || undefined, play_style: 'adventure',
         purpose: 'full_e2e', risk_tolerance: 'balanced', wild_encounters: 'planner',
         reasoning_effort: '', fps: 0, max_rounds: 0, max_frames: 0,
@@ -135,9 +149,9 @@ export async function runFullE2E(api: FullE2EAPI, options: FullE2EOptions): Prom
     }
     const run = await until(() => api.getRun(id), r => r.status === 'done',
       r => r.status === 'done' && !isVerifiedChampion(r)
-        ? 'Run finished without verified Hall of Fame completion (' + (r.reason || 'unknown reason') + ')' : null)
-    if (!isVerifiedChampion(run)) throw new Error('Missing verified Hall of Fame evidence')
-    finished('Hall of Fame goal completed')
+        ? 'Run finished without verified full-game completion (' + (r.reason || 'unknown reason') + ')' : null)
+    if (!isVerifiedChampion(run)) throw new Error('Missing verified full-game completion evidence')
+    finished('Full-game goal completed')
     if (options.uploadPrivate) {
       mark('uploader', 'Check private uploader configuration')
       const config = await checked(() => api.youtubeStatus(id))

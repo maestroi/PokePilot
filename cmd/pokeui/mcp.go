@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -87,6 +88,14 @@ type mcpStartRunInput struct {
 	// server's llama.cpp build (see agent.LLMPlanner.ReasoningEffort) —
 	// this option lets an operator dial it without redeploying.
 	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"strategist reasoning effort: low, medium, high, off (thinking disabled outright), or auto (endpoint default)"`
+	// Run policy knobs, mirroring the farm launch form. Empty keeps the
+	// runner's compatibility default for each.
+	PlayStyle       string `json:"play_style,omitempty" jsonschema:"speedrun, adventure, completionist or team_builder; empty is speedrun"`
+	Purpose         string `json:"purpose,omitempty" jsonschema:"normal, debug_coverage or full_e2e; empty is normal"`
+	RiskTolerance   string `json:"risk_tolerance,omitempty" jsonschema:"aggressive, balanced or cautious; empty is aggressive"`
+	WildEncounters  string `json:"wild_encounters,omitempty" jsonschema:"planner (may flee) or fight (never flee); empty is planner"`
+	LLMDeployment   string `json:"llm_deployment,omitempty" jsonschema:"model deployment id to play the run; takes precedence over llm_profile"`
+	RecoveryProfile string `json:"recovery_profile,omitempty" jsonschema:"strict (historic terminal budgets) or resilient (keep the campaign alive with checkpoint rollback)"`
 }
 
 type mcpStartRunOutput struct {
@@ -191,6 +200,14 @@ type mcpRunView struct {
 	Reason          string         `json:"reason,omitempty"`
 	Detail          string         `json:"detail,omitempty"`
 	Issue           map[string]any `json:"issue,omitempty"`
+	// Comparison identity: what kind of run this was and who played it.
+	PlayStyle      string                  `json:"play_style,omitempty"`
+	Purpose        string                  `json:"purpose,omitempty"`
+	LLMDeployment  string                  `json:"llm_deployment,omitempty"`
+	Inference      *farm.InferenceIdentity `json:"inference,omitempty"`
+	ExperimentID   string                  `json:"experiment_id,omitempty"`
+	StartedAt      int64                   `json:"started_at,omitempty"`
+	RuntimeSeconds float64                 `json:"runtime_seconds,omitempty"`
 }
 
 type mcpWorkerView struct {
@@ -248,7 +265,11 @@ func mcpSummaryIssue(issue map[string]any) map[string]any {
 func mcpSummaryRun(run map[string]any) map[string]any {
 	out := mcpSelectedFields(run, "run_id", "status", "game", "planner", "starter", "goal",
 		"seed", "frame", "map", "x", "y", "attempts", "error_attempts", "queued_at",
-		"ended_at", "reason", "llm_profile", "reasoning_effort")
+		"ended_at", "reason", "llm_profile", "reasoning_effort", "play_style", "purpose",
+		"llm_deployment", "experiment_id", "started_at", "runtime_seconds")
+	if inference, ok := run["inference"].(map[string]any); ok {
+		out["model"] = mcpSelectedFields(inference, "label", "model_id", "compute")
+	}
 	for _, key := range []string{"goal", "reason"} {
 		if value, ok := out[key].(string); ok {
 			out[key] = mcpClipString(value, 180)
@@ -284,7 +305,8 @@ func mcpSummaryListRun(run mcpRunView) map[string]any {
 	for key, value := range map[string]string{
 		"game": run.Game, "planner": run.Planner, "starter": run.Starter,
 		"goal": mcpClipString(run.Goal, 180), "reason": mcpClipString(run.Reason, 180),
-		"detail": mcpClipString(run.Detail, 240),
+		"detail": mcpClipString(run.Detail, 240), "play_style": run.PlayStyle,
+		"purpose": run.Purpose, "llm_deployment": run.LLMDeployment, "experiment_id": run.ExperimentID,
 	} {
 		if value != "" {
 			out[key] = value
@@ -298,6 +320,19 @@ func mcpSummaryListRun(run mcpRunView) map[string]any {
 	}
 	if run.EndedAt != 0 {
 		out["ended_at"] = run.EndedAt
+	}
+	if run.StartedAt != 0 {
+		out["started_at"] = run.StartedAt
+	}
+	if run.RuntimeSeconds > 0 {
+		out["runtime_seconds"] = run.RuntimeSeconds
+	}
+	if run.Inference != nil {
+		out["model"] = map[string]any{"label": run.Inference.Label, "model_id": run.Inference.ModelID, "compute": run.Inference.Compute}
+	}
+	if run.Status == "done" {
+		// Same rule as the wall's archive success filter.
+		out["success"] = run.Reason == "done" || (run.Stats != nil && run.Stats.GoalComplete)
 	}
 	if run.Stats != nil {
 		out["stats"] = map[string]any{
@@ -381,6 +416,14 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
 	}, control.getRunArtifacts)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_attempts",
+		Description: "List one run's finished attempts with each attempt's finish reason, runner version and the triage problems it hit (fixed/queued/dismissed). Use it to pick the attempt to debug on a multi-attempt run, then pass that attempt to pokepilot_prepare_debug or pokepilot_list_checkpoints.",
+	}, control.getRunAttempts)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_list_checkpoints",
+		Description: "List one attempt's saved checkpoints (name, kind, frame, round, map position, whether it is replayable) without downloading state bytes. Defaults to the run's latest attempt.",
+	}, control.listCheckpoints)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifact_content",
 		Description: "Fetch one small artifact's bytes (a .state checkpoint, .ram snapshot, or knowledge/failure JSON) as base64, for local reproduction, whether pokewall still holds it inline or it has since been durabilized to S3. Bounded by the MCP response cap, so a large recording such as run.gbrun still will not fit; use the operator UI/replay service for that.",
 	}, control.getRunArtifactContent)
@@ -388,18 +431,6 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_cancel_run",
 		Description: "Request cooperative cancellation of one queued or active PokePilot run.",
 	}, control.cancelRun)
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "pokepilot_clone_run",
-		Description: "Queue a fresh run with another run's exact spec (game, seed, goal, play style, risk, deployment, budgets). Use it to rerun a failure from the start after a fix ships. Endless runs cannot be cloned through MCP.",
-	}, control.cloneRun)
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "pokepilot_queue_repro",
-		Description: "Queue a finite verification run that resumes an llm run from one of its checkpoints (default: the latest attempt's latest replayable checkpoint). Use it to check a fix against the exact failing state.",
-	}, control.queueRepro)
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "pokepilot_flag_stuck",
-		Description: "Stop an active run as stuck with an operator note. The run settles with the ordinary stuck outcome, so the failure reaches triage like a stagnation-watchdog stop. Use pokepilot_cancel_run instead when the run is not actually stuck.",
-	}, control.flagStuck)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_triage",
 		Description: "Get actionable failures in compact, paged groups by default (20 per page; use offset for the next page). Use view=full to retrieve legacy evidence, and include_resolved=true only for historical audits.",
@@ -412,6 +443,19 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_record_solver_attempt",
 		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
 	}, control.recordSolverAttempt)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_clone_run",
+		Description: "Queue a fresh run with another run's exact spec (game, seed, goal, play style, risk, deployment, budgets). Use it to rerun a failure from the start after a fix ships. Endless runs cannot be cloned through MCP.",
+	}, control.cloneRun)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_queue_repro",
+		Description: "Queue a finite verification run that resumes an llm run from one of its checkpoints (default: the latest attempt's latest replayable checkpoint). Use it to check a fix against the exact failing state.",
+	}, control.queueRepro)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_flag_stuck",
+		Description: "Stop an active run as stuck with an operator note. The run settles with the ordinary stuck outcome, so the failure reaches triage like a stagnation-watchdog stop. Use pokepilot_cancel_run instead when the run is not actually stuck.",
+	}, control.flagStuck)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
@@ -544,10 +588,31 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		}
 	} else if planner == "llm" && goal == "" {
 		if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
-			goal = "Play through the current supported Gen 2 frontier."
+			// Full game: Gold/Silver end at Red on Mt. Silver, not Hall of Fame.
+			goal = "progress:gs_mt_silver_red_defeated"
 		} else {
 			goal = "Earn the Boulder Badge."
 		}
+	}
+
+	// The runner maps unknown policy names to the compatibility default, so a
+	// typo would silently launch a different run; reject it here instead.
+	policy := map[string]string{}
+	for _, field := range []struct {
+		name, value string
+		allowed     []string
+	}{
+		{"play_style", in.PlayStyle, []string{"speedrun", "adventure", "completionist", "team_builder"}},
+		{"purpose", in.Purpose, []string{"normal", "debug_coverage", "full_e2e"}},
+		{"risk_tolerance", in.RiskTolerance, []string{"aggressive", "balanced", "cautious"}},
+		{"wild_encounters", in.WildEncounters, []string{"planner", "fight"}},
+		{"recovery_profile", in.RecoveryProfile, []string{"strict", "resilient"}},
+	} {
+		value := strings.ToLower(strings.TrimSpace(field.value))
+		if value != "" && !slices.Contains(field.allowed, value) {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s must be %s", field.name, strings.Join(field.allowed, ", "))
+		}
+		policy[field.name] = value
 	}
 
 	runID := fmt.Sprintf("mcp-%s-%04x", time.Now().UTC().Format("20060102-150405"), mcpRunSequence.Add(1)&0xffff)
@@ -564,6 +629,12 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		FPS:             in.FPS,
 		MaxRounds:       in.MaxRounds,
 		MaxFrames:       in.MaxFrames,
+		PlayStyle:       policy["play_style"],
+		Purpose:         farm.RunPurpose(policy["purpose"]),
+		RiskTolerance:   policy["risk_tolerance"],
+		WildEncounters:  policy["wild_encounters"],
+		LLMDeployment:   strings.TrimSpace(in.LLMDeployment),
+		RecoveryProfile: farm.RecoveryProfile(policy["recovery_profile"]),
 	}
 	var upstream map[string]any
 	if err := c.requestJSON(ctx, http.MethodPost, "/v1/specs", spec, &upstream); err != nil {

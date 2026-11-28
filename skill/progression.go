@@ -219,17 +219,48 @@ func interactVermilionTrashCan(m *emu.Emu, romData []byte, x, y uint8, policy Mo
 	return err
 }
 
+// vermilionSecondSwitch picks a can GymTrashScript accepts as the second
+// lock. Red's script compares only wSecondLockTrashCanIndex; Yellow's also
+// accepts the following byte, and its Yellow_SampleSecondTrashCan table pads
+// rows with -1 (and its 3-candidate rows sample out of range), so either byte
+// may be unusable. Red always writes a valid primary, so the alternate byte
+// (padding there) is never consulted. ok=false means no can can open the
+// second lock and the puzzle must be rerolled.
+func vermilionSecondSwitch(primary, alternate uint8) (uint8, bool) {
+	if _, _, ok := vermilionTrashCanCoords(primary); ok {
+		return primary, true
+	}
+	if _, _, ok := vermilionTrashCanCoords(alternate); ok {
+		return alternate, true
+	}
+	return 0, false
+}
+
+// vermilionRerollCan is a can GymTrashScript will reject as the second lock,
+// so pressing it takes the script's own reset path (clear the first lock and
+// draw a new first switch).
+func vermilionRerollCan(primary, alternate uint8) uint8 {
+	for i := uint8(0); i < vermilionCanCount; i++ {
+		if i != primary && i != alternate {
+			return i
+		}
+	}
+	return 0
+}
+
 // OpenVermilionGym solves Lt. Surge's two-switch trash-can gate from the
 // game's own live puzzle state. It does not guess or brute-force. The map
 // script chooses the first switch in wFirstLockTrashCanIndex; after that can
-// succeeds, GymTrashScript writes the generated adjacent second switch into
-// wSecondLockTrashCanIndex.
+// succeeds, GymTrashScript writes the generated second switch candidate(s)
+// at wSecondLockTrashCanIndex (see vermilionSecondSwitch).
 //
 // The two lock event bits are the authoritative phase. A previous objective
 // can be interrupted after opening the first switch but before touching the
 // second. Pressing the first switch again in that state is NOT idempotent:
 // the ROM treats it as a wrong second-switch attempt, resets the first lock,
 // and chooses a new puzzle. Resume directly at the generated second switch.
+// When the ROM generated no reachable second switch, a deliberate wrong press
+// triggers that same reset and the puzzle is solved again from the new draw.
 func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != vermilionGymMap {
 		return fmt.Errorf("skill: OpenVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionGymMap)
@@ -238,45 +269,63 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenVermilionGym: nil policy")
 	}
 
+	// ponytail: bounded rerolls; each unsolvable draw is rare, 4 is ample.
+	const maxRerolls = 4
 	var mem state.Mem
-	state.Snapshot(m, &mem)
-	phase := vermilionGymPuzzlePhaseFor(&mem)
-	if phase == vermilionGymGateOpen {
-		return nil
-	}
-
-	if phase == vermilionGymNeedsFirstSwitch {
-		first := m.Peek8(sym.FirstLockTrashCanIndex)
-		x, y, ok := vermilionTrashCanCoords(first)
-		if !ok {
-			return fmt.Errorf("skill: OpenVermilionGym: first switch index %d is outside 0..14", first)
-		}
-		if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
-			return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
-		}
+	for reroll := 0; ; reroll++ {
 		state.Snapshot(m, &mem)
-		phase = vermilionGymPuzzlePhaseFor(&mem)
+		phase := vermilionGymPuzzlePhaseFor(&mem)
 		if phase == vermilionGymGateOpen {
 			return nil
 		}
-		if phase != vermilionGymNeedsSecondSwitch {
-			return fmt.Errorf("skill: OpenVermilionGym: first switch %d did not advance the puzzle to the second lock", first)
-		}
-	}
 
-	second := m.Peek8(sym.SecondLockTrashCanIndex)
-	x, y, ok := vermilionTrashCanCoords(second)
-	if !ok {
-		return fmt.Errorf("skill: OpenVermilionGym: second switch index %d is outside 0..14", second)
+		if phase == vermilionGymNeedsFirstSwitch {
+			first := m.Peek8(sym.FirstLockTrashCanIndex)
+			x, y, ok := vermilionTrashCanCoords(first)
+			if !ok {
+				return fmt.Errorf("skill: OpenVermilionGym: first switch index %d is outside 0..14", first)
+			}
+			if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
+				return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
+			}
+			state.Snapshot(m, &mem)
+			phase = vermilionGymPuzzlePhaseFor(&mem)
+			if phase == vermilionGymGateOpen {
+				return nil
+			}
+			if phase != vermilionGymNeedsSecondSwitch {
+				return fmt.Errorf("skill: OpenVermilionGym: first switch %d did not advance the puzzle to the second lock", first)
+			}
+		}
+
+		primary := m.Peek8(sym.SecondLockTrashCanIndex)
+		alternate := m.Peek8(sym.SecondLockTrashCanIndex + 1)
+		second, ok := vermilionSecondSwitch(primary, alternate)
+		if !ok {
+			if reroll >= maxRerolls {
+				return fmt.Errorf("skill: OpenVermilionGym: no valid second switch (%d,%d) after %d rerolls", primary, alternate, reroll)
+			}
+			can := vermilionRerollCan(primary, alternate)
+			x, y, _ := vermilionTrashCanCoords(can)
+			if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
+				return fmt.Errorf("skill: OpenVermilionGym: reroll can %d at (%d,%d): %w", can, x, y, err)
+			}
+			state.Snapshot(m, &mem)
+			if phase = vermilionGymPuzzlePhaseFor(&mem); phase != vermilionGymNeedsFirstSwitch {
+				return fmt.Errorf("skill: OpenVermilionGym: reroll can %d did not reset the puzzle", can)
+			}
+			continue
+		}
+		x, y, _ := vermilionTrashCanCoords(second)
+		if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
+			return fmt.Errorf("skill: OpenVermilionGym: second switch %d at (%d,%d): %w", second, x, y, err)
+		}
+		state.Snapshot(m, &mem)
+		if phase = vermilionGymPuzzlePhaseFor(&mem); phase != vermilionGymGateOpen {
+			return fmt.Errorf("skill: OpenVermilionGym: second switch %d did not open the gate", second)
+		}
+		return nil
 	}
-	if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
-		return fmt.Errorf("skill: OpenVermilionGym: second switch %d at (%d,%d): %w", second, x, y, err)
-	}
-	state.Snapshot(m, &mem)
-	if phase = vermilionGymPuzzlePhaseFor(&mem); phase != vermilionGymGateOpen {
-		return fmt.Errorf("skill: OpenVermilionGym: second switch %d did not open the gate", second)
-	}
-	return nil
 }
 
 // travelOpenVermilion is Travel with one live-map correction: opening the

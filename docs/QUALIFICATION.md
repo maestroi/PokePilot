@@ -573,29 +573,30 @@ Seven/eight-badge goals are now selectable for unqualified live testing.
 Both retail ROMs still require an end-to-end qualification replay through
 Radio Tower, Ice Path, Clair and Dragon's Den before certification.
 
-## Operator opt-in: attempt seven/eight badges before ROM qualification
+## Gold/Silver operator goals: badges and Hall of Fame
 
-The New Run form exposes **Earn 7 badges.** and **Earn 8 badges.** for Gold
-and Silver as explicitly experimental stop targets. An operator can now run
-the existing seventh badge controller and the Radio Tower gameplay sequence
-without waiting for complete Gold/Silver checkpoint qualification. These
-are best-effort live runs, **not a claim of end-to-end playability**.
+The Gold/Silver launcher exposes direct one- through eight-badge stop targets.
+The operator has confirmed successful eight-badge runs, so badges 7 (Glacier)
+and 8 (Rising) are no longer labeled experimental in the New Run selector.
+Each goal still requires its real cartridge badge bit, including the
+post-Clair Dragon's Den Rising Badge award.
 
-The objective planner is wired through Pryce's real Glacier Badge bit,
-the fake Radio Tower Director, Basement Key, Underground Card Key,
-3F shutter, 4F/5F executives, and the final Rocket boss plus the
-version-specific Director wing reward. All retain their cartridge-owned
-postconditions; game progression cannot be certified by reaching a map or
-finishing a generic battle.
+The League launcher has **one** complete-challenge stop target:
+`progress:gs_league_hall_of_fame`. Will, Koga, Bruno, Karen and Champion
+Lance remain ordered **internal** progression objectives, with independent
+retail event verification, but are no longer separately selectable run goals.
+This makes a new Hall of Fame run progress through the entire League rather
+than stopping after a single Elite Four battle. The Indigo Plateau / Victory
+Road intermediate goal remains available for targeted debugging.
 
-**Ice Path, Clair, and Dragon's Den are still missing executable
-controllers.** If an eight-badge attempt reaches this unfinished frontier,
-it must remain incomplete and produce usable failure/checkpoint evidence,
-rather than mark itself successful. Real ROM runs provide the failures and
-checkpoints to iterate on. The conservative "current supported Gen 2
-frontier" goal still stops at Mineral Badge and is unchanged.
+The Hall of Fame path remains experimental until a real Gold/Silver run
+reaches the permanent Hall of Fame event. The legacy `gs_supported_frontier`
+preset currently still stops at Mineral Badge; this UI consolidation does
+not silently retarget already running or saved preset campaigns.
+This is an operator UI cleanup, not a change to the internal League objective
+execution or existing run records.
 
-## Gen2: experimental Ice Path → Clair → Dragon Fang/Rising Badge
+## Gen2: Ice Path → Clair → Dragon Fang/Rising Badge
 
 The eight-badge objective chain now extends beyond the Rocket Tower:
 Ice Path HM07 Waterfall on 1F, the real Clair battle in Blackthorn Gym,
@@ -612,10 +613,11 @@ that hides the Fang ball is not sufficient. A full Items pocket blocks
 the retail Dragon Fang and gives a typed diagnostic; no item or badge is
 forged. The gap remains a candidate for inventory-space repair.
 
-These are opt-in **experimental**, still ROM-unqualified controllers.
-Real Gold and Silver gameplay replays (particularly the Ice Path forced
-movement and Gym boulder layouts) must be used to fix unexpected
-navigation or script differences before certifying this route.
+The operator has confirmed successful eight-badge runs, so the seventh
+and eighth badge launcher targets are no longer labeled experimental.
+Repeatable Gold and Silver checkpoint replays remain useful to catch
+version-specific Ice Path and Gym boulder navigation regressions; this
+does not qualify the subsequent League and Hall of Fame route.
 
 ### Assigned Strength pit puzzles
 
@@ -637,11 +639,306 @@ walks the owned Johto route), Surfs Route 27 through Tohjo Falls, rests at the
 Route 26 Heal House, passes the Victory Road Gate badge check and fights the
 Victory Road rival as an ordinary owned interruption. Completion is only the
 cartridge's `ENGINE_FLYPOINT_INDIGO_PLATEAU` (wVisitedSpawns bit
-`SPAWN_INDIGO`), set by Route 23's map callback. The Elite Four is not
-executable yet and nothing past the plateau is offered.
+`SPAWN_INDIGO`), set by Route 23's map callback. leads into separate experimental Elite Four goals, each requiring cartridge proof.
 
 Evidence (retail Gold, `final.state` of run-3om7ptfumukt9aaxwusxdq9sj,
 post-Rising): the first walk lost to Route 26 Cooltrainer Joyce after the
 Route 27 trainers drained a Tackle/Strength/Cut/Ember Typhlosion, which is a
 typed `combat_defeat`; the retry from the blackout checkpoint (Route 27
 trainers now beaten) reached Route 23 with the flypoint set in ~125k frames.
+
+
+## Gen2: experimental Elite Four Will milestone
+
+Once `gs_indigo_plateau_reached` is observed, the next offered milestone is
+`gs_league_will_defeated`. It heals at the Indigo Pokecenter before the
+first room, follows the retail warp to Will and owns the entrance-lock scene,
+trainer battle and dialogue through the existing interruption driver. A resume
+already inside Will's room must not return to the Pokecenter: entering it
+reinitializes the current League challenge and clears all per-member events.
+
+Success is **only** the retail `EVENT_BEAT_ELITE_4_WILL` (1464), which the
+Will script sets after the post-battle dialogue. Merely visiting the room,
+having eight badges or reaching Indigo is not proof. The native topology
+contains later League rooms as geometry; the following experimental objectives own their battles and proof separately.
+Do not enable the generic Champion goal on Gold/Silver on this basis.
+
+ROM-free coverage: `TestGSWillLeagueProgressRequiresCartridgeBattleEvent`,
+`TestGen2LeagueNativeRoomsFollowRetailOrder`,
+`TestGen2LeagueWillWarpIDsAndCoordinates` and the Gold/Silver experimental
+progression-chain test. Real retail Gold/Silver checkpoint qualification from
+post-Rising through Will is still required before this slice is considered
+qualified; battle loss must remain a typed ordinary combat outcome.
+
+
+## Gen2: experimental middle Elite Four — Koga, Bruno, Karen
+
+Following the owned Will milestone, the sequential targets are
+`gs_league_koga_defeated`, `gs_league_bruno_defeated` and
+`gs_league_karen_defeated`. Each requires the preceding member's genuine
+cartridge victory event (1464 → 1465 → 1466 → 1467), traverses its north
+door on the verified native map and uses the Gen2 battle/scene driver.
+Successful execution requires the **specific post-battle event flag** and
+returned overworld control. Arrival in a chamber, a dialogue completion or
+another member's event never substitutes for the current member's victory.
+
+The controllers accept checkpoint resumption only in the previous member's
+room or the current room. A blackout/return to Indigo cannot continue on
+stale in-room progress, because the Pokecenter callback resets all League
+per-member events. Each step avoids an Indigo heal after the Will fight.
+
+This slice does **not** provide Gen2 between-battle item healing or PP
+restoration; the generic Gen1 resource executor is not safe to use with
+Gold/Silver item layouts. The portable combat recovery gate still owns typed
+battle defeat outcomes. Do not claim an unattended multi-battle qualification
+until real-ROM checkpoint replays prove it, including the resource constraint.
+
+ROM-free regression: `TestGSLeagueMiddleMemberEventsAreIndependent`,
+`TestGSLeagueMiddleMembersFormSequentialOwnedMilestones`, both Gold/Silver
+progression-chain tests and the New Run goal-selection checks. Qualification
+requires separate Gold and Silver saved-state replays at the Will→Koga,
+Koga→Bruno, and Bruno→Karen boundaries. Champion Lance and Hall of Fame
+are handled by the next independent experimental milestone, not by these rooms.
+
+
+## Gen2: experimental Champion Lance and Hall of Fame
+
+After `gs_league_karen_defeated`, the adapter offers two sequential
+objectives: `gs_league_lance_defeated` followed by
+`gs_league_hall_of_fame`. These deliberately measure different real
+cartridge facts:
+
+- `EVENT_BEAT_CHAMPION_LANCE` (1468) is set by `LancesRoom.asm` after
+  winning the mandatory Champion trainer battle, and is cleared when
+  the Indigo Center resets the next League challenge.
+- `EVENT_BEAT_ELITE_FOUR` (68) is set by `HallOfFame.asm` only *after*
+  Lance's escort, Oak/Mary dialogue and the Hall-of-Fame machine animation.
+  It survives later League attempts and is the permanent Johto story proof.
+
+The controller starts only from Karen's room or Lance's room, crosses
+Karen's scripted-open north exit, then triggers Lance via the real
+(4,5) coord-event (not an invented ordinary talk interaction). The
+Champion battle uses the typed Gen2 trainer-battle driver. Its result
+alone **never** satisfies the Hall objective. The Hall phase resumes the
+in-flight retail script in Lance's or the Hall room, advancing dialogue
+and movement only until the durable Hall event is visible. Waiting for
+overworld control at that point can hang on the credits/title sequence,
+so the event is the postcondition instead.
+
+These are opt-in and **unqualified** until repeatable Gold and Silver
+post-Karen checkpoints prove Lance's coord trigger, the long scripted
+ending, losses and the real Hall event. Nothing edits SRAM, grants items
+or teleports into Hall of Fame. General Gen1 league consumable planning
+is not yet ported to Gen2; resource/PP conservation and battle resilience
+still need cartridge qualification before advertising a fully unattended
+Gold/Silver League campaign. Default `gs_supported_frontier` remains at
+its separately qualified milestone.
+
+ROM-free tests cover independent battle and permanent ceremony event
+flags for Gold and Silver, new goal ownership, strict ordered progression,
+the existing full League native map corridor and New Run goal selection.
+
+
+## Gen2: experimental in-League resource preparation
+
+Koga, Bruno, Karen and Lance now invoke bounded **native Gold/Silver**
+field-item preparation before committing to each next fight. It observes
+the real party and Items pocket after every action and chooses revives to
+recover the two-member live floor, status cures, the smallest sufficient
+potion at a 55%-HP floor and PP restoration for members nearing exhaustion.
+At most six items may be spent per preparation boundary. This is not the
+Gen-I League planner or Gen-I item ID list; the native GS constants are
+defined in `agent/gs_league_resources.go` against the vendored item table.
+
+
+Before Will, the Indigo lobby's retail Mart can sell up to three Revives,
+five Hyper Potions, three Full Restores, and two Full Heals (existing stock
+counts toward each target). The purchase controller respects the actual
+MartIndigoPlateau inventory, verified item prices, cash on hand, a 1,000
+Pokédollar reserve, and the 20-slot ordinary-item bag limit. It never visits
+the Mart after the League's one-way room lock. A poor or full-inventory run
+proceeds with existing supplies, while any attempted purchase must prove a
+real bag/money change before the executor returns.
+
+The new `gs/profile/field_item.go` implements the semantic item decoder:
+the current party's HP/status/PP and the *rendered* USE submenu, party-use
+selector and PP move selector must match before generic item execution
+advances. PACK graphics can be covered by the USE submenu; stale cursor
+bytes cannot masquerade as an open menu. The generic item executor also
+switches to the Items pocket before selecting the entry; Gold/Silver retain
+the last-used pocket across transactions.
+
+Every successful medicine use must have **both** a positive party effect
+and an observed one-item decrement. An unfamiliar menu fails explicitly
+rather than altering RAM, guessing UI input or declaring a heal. An empty
+bag or inability to reach the desired HP/PP floor does not synthesize
+resources or imply story progress; the normal trainer battle still decides.
+Do not interpret the ROM-free decoder tests as real-ROM qualification.
+Before the next unattended full Gold/Silver run is certified, inspect actual
+pack submenus, per-member post-battle healing, PP recovery prompts, the
+Indigo lobby's resource stock, and typed recovery from a failed medicine
+sequence. Additional retail checkpoint replay failures should be addressed
+with their smallest deterministic regression.
+
+## Gen2 League: first-run replay checkpoint corpus
+
+An hours-long fresh Gold/Silver Hall of Fame campaign must not have to be
+repeated from New Bark Town to investigate each League failure. With
+`POKEPILOT_QUALIFICATION_CORPUS` configured on the **game worker** to a
+private writable directory, the existing successful-objective capture hook
+now retains these immutable, source-verified state snapshots:
+
+```text
+$POKEPILOT_QUALIFICATION_CORPUS/gs-league/
+  gold/                             # or silver/
+    post-rising/start.state          # Dragon's Den B1F
+    post-indigo/start.state          # Route 23 flypoint, NOT the Center
+    post-will/start.state            # Will's defeated room
+    post-koga/start.state            # Koga's defeated room
+    post-bruno/start.state           # Bruno's defeated room
+    post-karen/start.state           # Karen's defeated room
+```
+
+Each captured directory also contains `source.json` with game, **exact**
+objective, run ID, ROM SHA-1, state SHA-256, frame and capture time. A
+checkpoint is eligible only for the **first verified transaction** of that
+progress objective, after the prerequisite event and on a settled,
+controllable map. Completed Hall of Fame saves and repeat Elite Four
+challenges are ineligible. The existing atomic first-writer-wins publisher
+prevents a later run from replacing a known replay baseline.
+
+The saved state after Karen is an authentic **pre-Lance** fixture. Lance's
+victory and the Hall-of-Fame ceremony do not require a controllable
+overworld boundary, so they are deliberately *not* captured using this
+between-objective hook. The regular run's failure checkpoint and
+reproducer remain available for those in-flight cutscenes.
+
+**Operations:** The corpus is opt-in, off by default. Set
+`POKEPILOT_QUALIFICATION_CORPUS` on the runner *before* the milestone is
+reached and keep the mount private/persistent. The normal run checkpoint
+ring still works without this setting. Already completed milestones are not
+backfilled. Captures and their provenance are input material for future
+ROM-equipped, checkpoint-scoped replays; their existence is **not** proof
+that the next milestone or Hall of Fame passes. Do not commit/upload
+cartridges, `.state` files or personal save data to public PRs.
+
+
+## Gen2 League: replay one stage instead of restarting the campaign
+
+After a Gold or Silver worker has captured authentic League checkpoints
+under `POKEPILOT_QUALIFICATION_CORPUS`, open
+**Actions → Gen2 League ROM Stage Replay → Run workflow**. Choose
+`gold`, `silver`, or `both`, then select exactly one next stage.
+The workflow executes on the private `pokepilot-rom` runner and refuses to
+green-skip a missing retail ROM, `start.state`, or `source.json`.
+
+| Replay stage | Required immutable input | What is verified |
+| --- | --- | --- |
+| `indigo` | `gs-league/<game>/post-rising/start.state` | Indigo flypoint on Route 23 |
+| `will` | `gs-league/<game>/post-indigo/start.state` | Will retail victory |
+| `koga` | `gs-league/<game>/post-will/start.state` | Koga retail victory |
+| `bruno` | `gs-league/<game>/post-koga/start.state` | Bruno retail victory |
+| `karen` | `gs-league/<game>/post-bruno/start.state` | Karen retail victory |
+| `hall-of-fame` | `gs-league/<game>/post-karen/start.state` | Lance victory, **then** durable Hall of Fame event |
+
+The private ROM test checks retail cartridge size/SHA-1, the checkpoint's
+source objective and SHA-256, the initial native map, prior story event and
+control state, then uses the same Gen2 objective transaction as production.
+A pre-completed target cannot qualify. A failure leaves a private
+`failure.state` and JSON observations for focused debugging. Actions uploads
+only safe logs/JSON, not ROMs, savestates or `source.json`.
+
+To replay locally against a private mount (substitute the relevant
+`game` and `stage`):
+
+```sh
+export POKEPILOT_GS_LEAGUE_REPLAY=1
+export POKEPILOT_GS_LEAGUE_GAME=gold
+export POKEPILOT_GS_LEAGUE_STAGE=hall-of-fame
+export POKEPILOT_GS_LEAGUE_ROM="$HOME/.config/pokepilot/pokemon_gold.gbc"
+export POKEPILOT_GS_LEAGUE_START="$POKEPILOT_QUALIFICATION_CORPUS/gs-league/gold/post-karen/start.state"
+export POKEPILOT_GS_LEAGUE_OUT="$HOME/.local/state/pokepilot/league-debug"
+go test -count=1 -timeout=100m ./agent -run '^TestGSLeagueROMCheckpointReplay$' -v
+```
+
+**League ending boundary:** unlike ordinary room victories, Lance's real
+victory and the Hall of Fame event occur during non-interactive Oak/Mary and
+ceremony scripts. The Gold/Silver postcondition verifier accepts these
+precise transitions when cartridge-observed, without insisting on overworld
+control or pressing through the credits. This is narrowly scoped to those
+two events; all other progress goals still require a stable game boundary.
+A green public ROM-free CI run is not proof this replay succeeded on retail ROMs.
+
+## Gen2: Kanto checkpoint qualification after Hall of Fame
+
+The Kanto story executors remain **experimental** until their Gold/Silver retail
+replays pass. To avoid replaying Johto and the League for each failure, a
+runner with `POKEPILOT_QUALIFICATION_CORPUS` set retains these private
+first-clear qualification boundaries:
+
+| Captured checkpoint | Verified milestone | Native map | Next replay selector |
+| --- | --- | --- | --- |
+| `gs-kanto/<game>/post-ticket/start.state` | Elm's real S.S. Ticket | Elm's Lab | `first-landing` |
+| `gs-kanto/<game>/post-landing/start.state` | First S.S. Aqua disembarkation | Vermilion Port | `thunder` |
+| `gs-kanto/<game>/post-thunder/start.state` | Lt. Surge's badge | Vermilion Gym | `marsh` |
+| `gs-kanto/<game>/post-marsh/start.state` | Sabrina's badge | Saffron Gym | `rainbow` |
+| `gs-kanto/<game>/post-rainbow/start.state` | Erika's badge | Celadon Gym | `soul` |
+| `gs-kanto/<game>/post-soul/start.state` | Janine's badge | Fuchsia Gym | `manager` |
+| `gs-kanto/<game>/post-manager/start.state` | Power Plant manager's theft report | Power Plant | `rocket` |
+| `gs-kanto/<game>/post-rocket/start.state` | Cerulean Rocket encounter | Cerulean Gym | `machine-part` |
+| `gs-kanto/<game>/post-machine-part/start.state` | Hidden Machine Part recovered | Cerulean Gym | `restore-power` |
+| `gs-kanto/<game>/post-power/start.state` | Power Plant restored | Power Plant | `copycat` |
+| `gs-kanto/<game>/post-copycat/start.state` | Copycat's missing-doll request | Copycat's House 2F | `lost-doll` |
+| `gs-kanto/<game>/post-lost-doll/start.state` | Lost Doll received from Fan Club | Vermilion Fan Club | `rail-pass` |
+| `gs-kanto/<game>/post-rail-pass/start.state` | Copycat's actual Magnet Train Pass | Copycat's House 2F | `misty-date` |
+| `gs-kanto/<game>/post-misty-date/start.state` | Misty returns to her Gym | Route 25 | `cascade` |
+| `gs-kanto/<game>/post-cascade/start.state` | Misty's Cascade Badge | Cerulean Gym | `expn-card` |
+| `gs-kanto/<game>/post-expn-card/start.state` | Lavender Pokégear EXPN Card | Lavender Radio Tower 1F | `snorlax` |
+| `gs-kanto/<game>/post-snorlax/start.state` | Snorlax cleared with Poké Flute radio | Vermilion City | `boulder` |
+| `gs-kanto/<game>/post-boulder/start.state` | Brock's Boulder Badge | Pewter Gym | `volcano` |
+| `gs-kanto/<game>/post-volcano/start.state` | Blaine's Volcano Badge | Seafoam Gym | `invite-blue` |
+| `gs-kanto/<game>/post-blue-invited/start.state` | Blue invited from Cinnabar | Cinnabar Island | `earth` |
+| `gs-kanto/<game>/post-earth/start.state` | Blue's Earth Badge | Viridian Gym | `mt-silver-permit` |
+| `gs-kanto/<game>/post-mt-silver-permit/start.state` | Oak unlocks Mt. Silver | Oak's Lab | `red` |
+
+Each capture requires the Hall of Fame event, its preceding retail event,
+a newly committed target event, matching Gold/Silver identity, correct region
+and a stable native map. The checked state is atomically published to a
+private first-writer-wins location with ROM and state hashes. An existing
+save containing an earned badge cannot manufacture a first-clear fixture.
+
+Replay one objective from its **previous** checkpoint (change stage and source
+together for subsequent Kanto legs). The same selectors are available in
+**Actions → Gen2 Kanto ROM Stage Replay → Run workflow** on the private
+`pokepilot-rom` runner: choose Gold, Silver or both and one stage. The
+workflow refuses absent private fixtures and uploads only safe logs/JSON,
+never the ROM, `.sav` or `.state` bytes.
+
+```sh
+export POKEPILOT_GS_KANTO_REPLAY=1
+export POKEPILOT_GS_KANTO_GAME=gold
+export POKEPILOT_GS_KANTO_STAGE=first-landing
+export POKEPILOT_GS_KANTO_ROM="$HOME/.config/pokepilot/pokemon_gold.gbc"
+export POKEPILOT_GS_KANTO_START="$POKEPILOT_QUALIFICATION_CORPUS/gs-kanto/gold/post-ticket/start.state"
+export POKEPILOT_GS_KANTO_OUT="$HOME/.local/state/pokepilot/kanto-debug"
+go test -count=1 -timeout=100m ./agent -run '^TestGSKantoROMCheckpointReplay$' -v
+```
+
+The final `red` selector starts from the genuine Oak permit checkpoint.
+Red's actual disappearance event is checked using the existing special
+postcondition for the ending scene; there is deliberately **no post-Red
+first-clear checkpoint** because that event is set during the credits script
+before ordinary overworld control returns. The verifier must not confuse an
+uncontrollable ending with a failed battle.
+
+Blue's invitation is different from durable badges: its actor-visibility
+flag may be retired when he is beaten at Viridian. The Earth checkpoint
+therefore requires Blue's invitation **before** the battle and a new actual
+Earth Badge **after** the battle, without expecting the invitation actor to
+remain visible. No checkpoint can be synthesized by toggling event flags.
+
+The replay checks retail ROM SHA-1, checkpoint provenance and SHA-256, the
+source map/region and prerequisites, and the next event/badge via the live
+adapter postcondition. Missing inputs fail closed; private failures retain
+`failure.state` and JSON observations. ROM-free CI does **not** establish
+successful retail Kanto progression.

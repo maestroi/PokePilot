@@ -97,6 +97,40 @@ func TestApplyRunPurposeDexGoalCreatesRemoteCaptureRestock(t *testing.T) {
 	}
 }
 
+// run-ib9smf1mzpcih: a normal-purpose Dex run at 50/124 with zero balls was
+// offered only town-to-town travel. The supply leg sells surplus first, then
+// buys, then hands back the ordinary menu when nothing can raise stock.
+func TestApplyRunPurposeNormalDexRunForcesCaptureSupplyLeg(t *testing.T) {
+	obs := Observation{
+		PartyCount:   1,
+		Party:        []PartyMon{{Species: "hitmonlee", HP: 100, MaxHP: 100}},
+		Money:        1137,
+		RestockStock: []string{"pokeball"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	travel := []Objective{{Kind: KindGoTo, Place: "cerulean city"}, {Kind: KindGoTo, Place: "route 2"}}
+	sell := Objective{Kind: KindSell, Item: "tm27", Qty: 1}
+	goal := "Complete the obtainable Pokédex."
+
+	got := ApplyRunPurpose(obs, append(append([]Objective{}, travel...), sell), RunPurposeNormal, goal)
+	if len(got) != 1 || got[0].Kind != KindSell {
+		t.Fatalf("dry Dex menu with a funding sale = %+v, want only the sale", got)
+	}
+	got = ApplyRunPurpose(obs, travel, RunPurposeNormal, goal)
+	if len(got) != 1 || got[0].Kind != KindBuy || got[0].Intent != dexCaptureSupplyIntent {
+		t.Fatalf("dry Dex menu = %+v, want only the remote ball restock", got)
+	}
+	obs.Money = 0
+	if got := ApplyRunPurpose(obs, travel, RunPurposeNormal, goal); len(got) != len(travel) {
+		t.Fatalf("unfundable dry Dex menu = %+v, want the ordinary menu back", got)
+	}
+	obs.Money = 1137
+	obs.Bag = []Item{{Name: "pokeball", Quantity: minimumCaptureStock}}
+	if got := ApplyRunPurpose(obs, travel, RunPurposeNormal, goal); len(got) != len(travel) {
+		t.Fatalf("stocked Dex menu = %+v, want the ordinary menu", got)
+	}
+}
+
 func TestApplyRunPurposeDebugCoverageSweepsFrontierBeforeStory(t *testing.T) {
 	obs := Observation{
 		PartyCount: 1,

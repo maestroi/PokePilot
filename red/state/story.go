@@ -1,6 +1,9 @@
 package state
 
-import "github.com/maestroi/pokepilot/red/sym"
+import (
+	"github.com/maestroi/pokepilot/gen1"
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
 const (
 	// wStatusFlags1 bit 6 is BIT_GAVE_SAFFRON_GUARDS_DRINK.
@@ -12,19 +15,6 @@ const (
 	// durable RAM fact that survives the ending's event reset.
 	elite4FlagsAddr     uint16 = 0xd734
 	elite4CompletedMask uint8  = 1 << 0
-	// BIT_STARTED_ELITE_4: set by each Elite Four room's first script run,
-	// cleared by the Indigo lobby script, which then resets the whole
-	// Indigo event range (autowalk through Lance, not the Champion).
-	elite4StartedMask uint8 = 1 << 1
-
-	// Elite Four gauntlet map ids from pokered/constants/map_constants.asm.
-	lancesRoomMap    uint8 = 0x71
-	hallOfFameMap    uint8 = 0x76
-	championsRoomMap uint8 = 0x78
-	loreleisRoomMap  uint8 = 0xF5
-	brunosRoomMap    uint8 = 0xF6
-	agathasRoomMap   uint8 = 0xF7
-
 	// Item ids from pokered/constants/item_constants.asm.
 	bicycleItemID    uint8 = 0x06
 	secretKeyItemID  uint8 = 0x2b
@@ -148,30 +138,25 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		// Route 25 progression keys off it, while the ticket is a key item the
 		// game never consumes and the player (or bag pressure) may have stored
 		// in the PC. Bag alone reports a completed rescue as missing.
-		SSTicketAcquired:       HasEvent(m, EventGotSSTicket) || owned(ssTicketItemID),
-		HM01Acquired:           owned(hm01ItemID),
-		HM03Acquired:           owned(hm03ItemID),
-		HM04Acquired:           owned(hm04ItemID),
-		BicycleAcquired:        owned(bicycleItemID),
-		SilphScopeAcquired:     owned(silphScopeItemID),
-		PokeFluteAcquired:      owned(pokeFluteItemID),
-		SaffronGateOpen:        m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
-		CardKeyOwned:           owned(cardKeyItemID),
-		SilphCoRivalDefeated:   HasEvent(m, eventBeatSilphCoRival),
-		SilphCoCleared:         HasEvent(m, eventBeatSilphCoGiovanni),
-		MasterBallAwarded:      HasEvent(m, eventGotMasterBall),
-		MansionSwitchOn:        HasEvent(m, eventMansionSwitchOn),
-		SecretKeyOwned:         owned(secretKeyItemID),
-		ViridianGymOpen:        HasEvent(m, eventViridianGymOpen),
-		Route22RivalResolved:   HasEvent(m, eventBeatRoute22Rival2ndBattle),
-		LeagueChallengeStarted: HasEvent(m, eventAutowalkedIntoLoreleisRoom),
-		LeagueLoreleiDefeated:  HasEvent(m, eventBeatLorelei) || mainStoryComplete,
-		LeagueBrunoDefeated:    HasEvent(m, eventBeatBruno) || mainStoryComplete,
-		LeagueAgathaDefeated:   HasEvent(m, eventBeatAgatha) || mainStoryComplete,
-		LeagueLanceDefeated:    HasEvent(m, eventBeatLance) || mainStoryComplete,
-		LeagueChampionDefeated: HasEvent(m, EventBeatChampionRival) || mainStoryComplete,
-		MainStoryComplete:      mainStoryComplete,
+		SSTicketAcquired:     HasEvent(m, EventGotSSTicket) || owned(ssTicketItemID),
+		HM01Acquired:         owned(hm01ItemID),
+		HM03Acquired:         owned(hm03ItemID),
+		HM04Acquired:         owned(hm04ItemID),
+		BicycleAcquired:      owned(bicycleItemID),
+		SilphScopeAcquired:   owned(silphScopeItemID),
+		PokeFluteAcquired:    owned(pokeFluteItemID),
+		SaffronGateOpen:      m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
+		CardKeyOwned:         owned(cardKeyItemID),
+		SilphCoRivalDefeated: HasEvent(m, eventBeatSilphCoRival),
+		SilphCoCleared:       HasEvent(m, eventBeatSilphCoGiovanni),
+		MasterBallAwarded:    HasEvent(m, eventGotMasterBall),
+		MansionSwitchOn:      HasEvent(m, eventMansionSwitchOn),
+		SecretKeyOwned:       owned(secretKeyItemID),
+		ViridianGymOpen:      HasEvent(m, eventViridianGymOpen),
+		Route22RivalResolved: HasEvent(m, eventBeatRoute22Rival2ndBattle),
+		MainStoryComplete:    mainStoryComplete,
 	}
+	decodeLeagueFacts(m, &facts, mainStoryComplete)
 	facts.FuchsiaProgressionComplete = progress.Has(BadgeSoul) && facts.HM03Acquired && facts.HM04Acquired
 	facts.SilphRescueComplete = facts.SilphCoCleared && facts.MasterBallAwarded
 	for _, event := range route23BadgeCheckEvents {
@@ -180,7 +165,32 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		}
 	}
 	facts.Route23BadgeChecksComplete = facts.Route23BadgeChecksPassed == len(route23BadgeCheckEvents)
-	if leagueRunAbandoned(m, facts) {
+	return facts
+}
+
+// DecodeLeagueAttemptFacts is DecodeStoryFacts for a League rematch on a save
+// that already reached the Hall of Fame. Story facts fold the durable
+// completion bit into every League stage, because the ending erases the
+// Indigo events; a rematch needs the stages of the current attempt instead,
+// so the League fields come from the raw events and MainStoryComplete reads
+// false until the caller proves this attempt's own ending.
+func DecodeLeagueAttemptFacts(m *Mem, inv InventoryState) StoryFacts {
+	facts := DecodeStoryFacts(m, inv)
+	facts.MainStoryComplete = false
+	decodeLeagueFacts(m, &facts, false)
+	return facts
+}
+
+// decodeLeagueFacts fills the League stage facts. mainStoryComplete folds the
+// Hall-of-Fame bit into every stage (see MainStoryComplete).
+func decodeLeagueFacts(m *Mem, facts *StoryFacts, mainStoryComplete bool) {
+	facts.LeagueChallengeStarted = HasEvent(m, eventAutowalkedIntoLoreleisRoom)
+	facts.LeagueLoreleiDefeated = HasEvent(m, eventBeatLorelei) || mainStoryComplete
+	facts.LeagueBrunoDefeated = HasEvent(m, eventBeatBruno) || mainStoryComplete
+	facts.LeagueAgathaDefeated = HasEvent(m, eventBeatAgatha) || mainStoryComplete
+	facts.LeagueLanceDefeated = HasEvent(m, eventBeatLance) || mainStoryComplete
+	facts.LeagueChampionDefeated = HasEvent(m, EventBeatChampionRival) || mainStoryComplete
+	if leagueRunAbandoned(m, *facts, mainStoryComplete) {
 		// The events are still set, but the lobby will erase them on the
 		// next entry: the gauntlet has to be restarted from Lorelei.
 		facts.LeagueChallengeStarted = false
@@ -189,10 +199,9 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		facts.LeagueAgathaDefeated = false
 		facts.LeagueLanceDefeated = false
 	}
-	if facts.LeagueLoreleiDefeated || facts.LeagueBrunoDefeated || facts.LeagueAgathaDefeated || facts.LeagueLanceDefeated || facts.LeagueChampionDefeated || facts.MainStoryComplete {
+	if facts.LeagueLoreleiDefeated || facts.LeagueBrunoDefeated || facts.LeagueAgathaDefeated || facts.LeagueLanceDefeated || facts.LeagueChampionDefeated || mainStoryComplete {
 		facts.LeagueChallengeStarted = true
 	}
-	return facts
 }
 
 func inventoryHasItem(inv InventoryState, id uint8) bool {
@@ -209,16 +218,9 @@ func inventoryHasItem(inv InventoryState, id uint8) bool {
 // Indigo event range whenever BIT_STARTED_ELITE_4 is still set on entry, so
 // room progress observed outside the gauntlet is not durable and must not be
 // offered as a resumable stage. The Champion event lies outside that range.
-func leagueRunAbandoned(m *Mem, facts StoryFacts) bool {
-	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
+func leagueRunAbandoned(m *Mem, facts StoryFacts, mainStoryComplete bool) bool {
+	if mainStoryComplete || facts.LeagueChampionDefeated {
 		return false
 	}
-	if m.U8(elite4FlagsAddr)&elite4StartedMask == 0 {
-		return false
-	}
-	switch m.U8(sym.CurMap) {
-	case loreleisRoomMap, brunosRoomMap, agathasRoomMap, lancesRoomMap, championsRoomMap, hallOfFameMap:
-		return false
-	}
-	return true
+	return gen1.LeagueRunAbandoned(m.U8(elite4FlagsAddr), m.U8(sym.CurMap))
 }

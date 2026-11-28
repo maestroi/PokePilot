@@ -605,3 +605,24 @@ func TestRunWatchdogStagnationSurvivesResume(t *testing.T) {
 		t.Fatalf("progress after resume still stopped: %+v", got)
 	}
 }
+
+// Gen2 Elite Four rooms share one trainer stand and a zero legacy Map, and
+// report victories only through Story. Four League wins in a row must not
+// trip the short stuck watchdog (run-zzrclw1r60a8g).
+func TestRunWatchdogCountsAdapterStoryAndLocation(t *testing.T) {
+	policy := newRunWatchdogPolicy(Budget{StuckAfter: 1}, Observation{}, NewKnowledge(nil))
+	before := Observation{Location: "bruno-room", X: 5, Y: 8, Story: gameruntime.ProgressState{{ID: "karen"}}}
+	after := before
+	after.Story = gameruntime.ProgressState{{ID: "karen", Complete: true}}
+	if got := policy.successfulObjective(before, after, false); got.Stop != StopUnset {
+		t.Fatalf("Story change counted as no progress: %+v", got)
+	}
+	moved := before
+	moved.Location = "karen-room"
+	if sameProgress(before, moved) {
+		t.Fatal("Location change counted as no progress")
+	}
+	if !sameProgress(before, before) {
+		t.Fatal("identical observation counted as progress")
+	}
+}

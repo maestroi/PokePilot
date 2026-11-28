@@ -55,8 +55,10 @@ func initiateStaticBattle(m *emu.Emu, romData []byte, site StaticCaptureSite, po
 		if err := Face(m, site.X, site.Y); err != nil {
 			return fmt.Errorf("skill: static %s: face encounter: %w", site.Name, err)
 		}
+		// The fight event is set before the "woke up" text box, which only
+		// closes on A; drive the story all the way into the battle.
 		if err := useOverworldKeyItem(m, site.WakeItem, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, eventFightRoute16Snorlax) || state.DecodeBattle(mm) != nil
+			return state.DecodeBattle(mm) != nil
 		}); err != nil {
 			return fmt.Errorf("%w: %s did not wake: %v", ErrStaticCaptureUnavailable, site.Name, err)
 		}

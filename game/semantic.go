@@ -27,6 +27,15 @@ type ProgressFact struct {
 	Value    int        `json:"value,omitempty"`
 }
 
+// ProgressMainStoryComplete is the portable, durable Hall of Fame fact.
+// Each cartridge profile must independently verify its own ending event.
+const ProgressMainStoryComplete ProgressID = "main_story_complete"
+
+// ProgressCampaignBadges is the first-region badge tally for the full
+// eight-badge-and-League campaign. Profiles from games with two regions
+// publish Value as the first eight badges only.
+const ProgressCampaignBadges ProgressID = "campaign_badges"
+
 type ProgressState []ProgressFact
 
 func (s ProgressState) Has(id ProgressID) bool {
