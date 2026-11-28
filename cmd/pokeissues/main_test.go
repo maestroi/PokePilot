@@ -299,6 +299,60 @@ func TestReportDeduplicatesOpenFingerprint(t *testing.T) {
 	}
 }
 
+func TestReportSkipsClosedDuplicateFingerprint(t *testing.T) {
+	fake := newFakeGitHub()
+	m := sampleManifest("old-occurrence")
+	body := renderIssueBody("", m, nil)
+	fake.issues = []githubIssue{
+		{Number: 8, State: "closed", StateReason: "duplicate", Body: body},
+		{Number: 7, State: "open", Body: body},
+	}
+	issues, _ := newTestServer(t, fake)
+	resp := reportRequest(t, issues.URL, sampleManifest("new-occurrence"), "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	var got issueReportResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Issue.IssueNumber != 7 || !got.Deduplicated {
+		t.Fatalf("response=%+v", got)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.created != 0 || fake.commented != 0 || fake.patched != 0 {
+		t.Fatalf("created=%d commented=%d patched=%d", fake.created, fake.commented, fake.patched)
+	}
+}
+
+func TestReportCreatesIssueWhenOnlyMatchIsClosedDuplicate(t *testing.T) {
+	fake := newFakeGitHub()
+	m := sampleManifest("old-occurrence")
+	fake.issues = []githubIssue{
+		{Number: 8, State: "closed", StateReason: "duplicate", Body: renderIssueBody("", m, nil)},
+	}
+	issues, _ := newTestServer(t, fake)
+	resp := reportRequest(t, issues.URL, sampleManifest("new-occurrence"), "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	var got issueReportResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Issue.IssueNumber == 8 || got.Deduplicated {
+		t.Fatalf("response=%+v", got)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.created != 1 || fake.patched != 0 {
+		t.Fatalf("created=%d patched=%d", fake.created, fake.patched)
+	}
+}
+
 func TestReportSerializesConcurrentFingerprintDeduplication(t *testing.T) {
 	fake := newFakeGitHub()
 	fake.createStarted = make(chan struct{}, 1)
