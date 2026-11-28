@@ -54,8 +54,12 @@ the maximum to `archive_only`. The creative producer may always choose a
 
 ## Model configuration
 
-By default the replay service runs a deterministic `rules-v1` offline
-assessment (with exact event-backed beats). To opt into a separate editorial
+By default the replay service runs a deterministic `rules-v2` offline
+assessment (with exact event-backed beats). It tells the run's arc from generic
+timeline signals: the finish, every lost major battle and the rematch that won
+it, the final battle, and every badge together with the battle that earned it
+(at most 16 beats), captioned in viewer text rather than raw planner summaries.
+Stored `rules-v1` assessments remain valid. To opt into a separate editorial
 LLM, configure:
 
 | Variable | Meaning |

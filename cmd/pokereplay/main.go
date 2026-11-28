@@ -152,8 +152,9 @@ type replayServer struct {
 	youtube         youtubeConfig
 	youtubeHTTP     *http.Client
 	studioPublishMu sync.Mutex
+	productionMu    sync.Mutex // serializes production state read-modify-write
 	youtubeMu       sync.Mutex
-	youtubeActive   map[string]bool
+	youtubeActive   map[string]*atomic.Int64 // run -> bytes YouTube has received
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
@@ -192,7 +193,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		broadcastDestinations: broadcastDestinationsFromEnv(os.Getenv),
 		youtube:               youtubeConfigFromEnv(os.Getenv),
 		youtubeHTTP:           &http.Client{}, // uploads are bounded by youtubeUploadTimeout, not a client timeout
-		youtubeActive:         make(map[string]bool),
+		youtubeActive:         make(map[string]*atomic.Int64),
 	}
 }
 
@@ -258,7 +259,9 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", s.handleRTMPBroadcastStart)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
-	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", s.handleYouTubePublish)
+	mux.HandleFunc("GET /v1/runs/{id}/production", s.handleProductionStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/production", s.handleProductionRequest)
+	mux.HandleFunc("POST /v1/runs/{id}/production/retry", s.handleProductionRetry)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", s.handleStudioPublicationList)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", s.handleStudioPublicationCreate)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", s.handleStudioPublicationAction)
@@ -859,17 +862,21 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			}
 		}
 	}
-	for index := range attempts {
-		var renderErr error
+	renderErr := renderAttemptsConcurrently(ctx, attempts, onStart, onReady, func(ctx context.Context, attempt *preparedReplayAttempt, onStart func(replayVideoSegment), onReady func()) error {
+		var err error
 		if mode == replayModeSemantic {
-			renderErr = s.renderAttemptSemanticSegments(ctx, &attempts[index], onStart, onReady)
+			err = s.renderAttemptSemanticSegments(ctx, attempt, onStart, onReady)
 		} else {
-			renderErr = s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady)
+			err = s.renderAttemptVideoSegments(ctx, runID, mode, attempt, onStart, onReady)
 		}
-		if renderErr != nil {
-			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, renderErr))
-			return
+		if err != nil {
+			return fmt.Errorf("attempt %d: %w", attempt.Recording.Attempt, err)
 		}
+		return nil
+	})
+	if renderErr != nil {
+		setError(renderErr)
+		return
 	}
 
 	if jobID != "" {
@@ -1422,6 +1429,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go serverImpl.runRenderJobRecovery(ctx, 10*time.Second)
+	go serverImpl.runFullE2EProduction(ctx, productionInterval)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()

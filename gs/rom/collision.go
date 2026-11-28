@@ -365,21 +365,25 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"ROUTE_32", "ROUTE_35", "ROUTE_36", "ROUTE_37", "ECRUTEAK_CITY",
 		"ROUTE_38", "ROUTE_39", "OLIVINE_CITY", "ROUTE_40", "ROUTE_41", "CIANWOOD_CITY",
 		"ROUTE_42", "MAHOGANY_TOWN", "ROUTE_43", "LAKE_OF_RAGE",
-		"ROUTE_44", "BLACKTHORN_CITY", "DRAGONS_DEN_B1F":
+		"ROUTE_44", "BLACKTHORN_CITY", "DRAGONS_DEN_B1F",
+		"ROUTE_27", "ROUTE_26":
 		return 0x01, true
+	case "ROUTE_23":
+		return 0x03, true
 	case "ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY":
 		return 0x02, true
-	case "ROUTE_30_BERRY_HOUSE", "GOLDENROD_FLOWER_SHOP", "CIANWOOD_PHARMACY":
+	case "ROUTE_30_BERRY_HOUSE", "GOLDENROD_FLOWER_SHOP", "CIANWOOD_PHARMACY", "ROUTE_26_HEAL_HOUSE":
 		return 0x04, true
 	case "PLAYERS_HOUSE_1F":
 		return 0x05, true
 	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F",
 		"GOLDENROD_POKECENTER_1F", "ECRUTEAK_POKECENTER_1F",
-		"OLIVINE_POKECENTER_1F", "CIANWOOD_POKECENTER_1F", "MAHOGANY_POKECENTER_1F", "BLACKTHORN_POKECENTER_1F":
+		"OLIVINE_POKECENTER_1F", "CIANWOOD_POKECENTER_1F", "MAHOGANY_POKECENTER_1F", "BLACKTHORN_POKECENTER_1F",
+		"INDIGO_PLATEAU_POKECENTER_1F":
 		return 0x06, true
 	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE",
 		"ROUTE_35_GOLDENROD_GATE", "ROUTE_38_ECRUTEAK_GATE",
-		"ROUTE_42_ECRUTEAK_GATE", "ROUTE_43_MAHOGANY_GATE",
+		"ROUTE_42_ECRUTEAK_GATE", "ROUTE_43_MAHOGANY_GATE", "VICTORY_ROAD_GATE",
 		// pret maps.asm: GoldenrodUnderground uses TILESET_GATE, not UNDERGROUND.
 		"GOLDENROD_UNDERGROUND":
 		return 0x07, true
@@ -394,11 +398,12 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F",
 		// pret maps.asm: switch-room entrances use TILESET_ELITE_FOUR_ROOM so
 		// city-exit block $1c decodes as COLL_WARP_CARPET_DOWN, not floor.
-		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES":
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"WILLS_ROOM", "KOGAS_ROOM", "BRUNOS_ROOM", "KARENS_ROOM":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
-	case "OLIVINE_GYM":
+	case "OLIVINE_GYM", "LANCES_ROOM":
 		return 0x11, true
 	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
 		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
@@ -410,10 +415,11 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM", "BURNED_TOWER_1F",
 		"CIANWOOD_GYM":
 		return 0x14, true
-	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F", "DRAGONS_DEN_1F":
+	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F", "DRAGONS_DEN_1F",
+		"TOHJO_FALLS", "VICTORY_ROAD":
 		return 0x15, true
 	case "ICE_PATH_1F", "ICE_PATH_B1F", "ICE_PATH_B2F_MAHOGANY_SIDE",
-		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F":
+		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F", "HALL_OF_FAME":
 		return 0x1a, true
 	case "ILEX_FOREST":
 		return 0x1c, true
@@ -496,10 +502,27 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	if !ok {
 		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: tileset %#02x has no collision table", tileset)
 	}
+	return buildGen2Grid(p.rom, mapID, info, spec.name, tileset, table, blocks, mode)
+}
 
+// buildGen2Grid projects a map's blocks through its tileset collision table.
+func buildGen2Grid(rom []byte, mapID uint16, info gsdata.MapInfo, name string, tileset uint8, table []uint8,
+	blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
 	widthBlocks, heightBlocks := int(info.WidthBlocks), int(info.HeightBlocks)
+	if len(blocks) == 0 {
+		// Nil/empty blocks mean "use the cartridge's static map": connection
+		// approach needs the neighbour's landing seam without standing there.
+		if len(rom) == 0 {
+			return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s needs live blocks or a ROM for static blockdata", name)
+		}
+		static, err := mapBlockData(rom, mapID)
+		if err != nil {
+			return worldmodel.NativeGridSpec{}, err
+		}
+		blocks = static
+	}
 	if len(blocks) != widthBlocks*heightBlocks {
-		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", spec.name, len(blocks), widthBlocks*heightBlocks)
+		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", name, len(blocks), widthBlocks*heightBlocks)
 	}
 	width, height := widthBlocks*2, heightBlocks*2
 	out := worldmodel.NativeGridSpec{}
@@ -529,7 +552,7 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 			if block != 0 {
 				index := int(block)*4 + (x & 1) + 2*(y&1)
 				if index >= len(table) {
-					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", spec.name, block, index, tileset, len(table))
+					return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s block %#02x collision index %d exceeds tileset %#02x table length %d", name, block, index, tileset, len(table))
 				}
 				collision = table[index]
 			}

@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	gsCombatRecoveryMaxLevel         = 60
+	// Red's party reaches L81; a lead-only carry needs room above it.
+	gsCombatRecoveryMaxLevel         = 100
 	gsCombatRecoverySessionLevelGain = 2
 )
 
@@ -137,6 +138,10 @@ func gsLeadOnlyRecoveryCanAdvance(obs Observation) bool {
 
 func gsRecoveryGrindSite(obs Observation) (string, uint8, uint8, error) {
 	switch {
+	case obs.Story.Has(gsprofile.ProgressMtSilverOpened):
+		// Silver Cave Room 1 cave floor beside the entrance (9,33); its
+		// wild Pokemon are the only ones near Red's level.
+		return "SILVER_CAVE_ROOM_1", 13, 30, nil
 	case obs.Story.Has(gsprofile.ProgressSudowoodoCleared):
 		// Route 37 was proven by the Gold Burned Tower rival reproduction
 		// and remains a legal wild-encounter tile through the coastal frontier.

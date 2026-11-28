@@ -138,3 +138,40 @@ func gen1CombatByte(label string, value uint16) (uint8, error) {
 	}
 	return uint8(value), nil
 }
+
+var _ game.BattleDamageBound = (*Profile)(nil)
+
+func (*Profile) MaxCombatDamage(romData []byte, attacker, defender game.BattleCombatant, nativeMoveID uint16) (uint16, bool) {
+	moveID, err := gen1CombatByte("move", nativeMoveID)
+	if err != nil {
+		return 0, false
+	}
+	atk, err := gen1Combatant(attacker)
+	if err != nil {
+		return 0, false
+	}
+	def, err := gen1Combatant(defender)
+	if err != nil {
+		return 0, false
+	}
+	mv, err := rom.LookupMove(romData, moveID)
+	if err != nil {
+		return 0, false
+	}
+	return combat.MaxDamage(romData, atk, def, mv)
+}
+
+var _ game.BattleCaptureStatus = (*Profile)(nil)
+
+func (*Profile) CaptureStatusMove(romData []byte, defender game.BattleCombatant, nativeMoveID uint16) bool {
+	moveID, err := gen1CombatByte("move", nativeMoveID)
+	if err != nil {
+		return false
+	}
+	def, err := gen1Combatant(defender)
+	if err != nil {
+		return false
+	}
+	mv, err := rom.LookupMove(romData, moveID)
+	return err == nil && combat.CaptureStatus(romData, def, mv)
+}

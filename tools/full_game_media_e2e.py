@@ -111,7 +111,7 @@ class Pipeline:
         root = self.root
         try:
             if launch:
-                spec = {"run_id": self.id, "game": self.game, "planner": "llm",
+                spec = {"run_id": self.id, "game": self.game, "planner": "llm", "purpose": "full_e2e",
                         "starter": starter, "goal": "elite-four", "seed": seed,
                         "max_rounds": 0, "max_frames": 0, "recovery_profile": "resilient",
                         "endless": False, "random_seed": False}

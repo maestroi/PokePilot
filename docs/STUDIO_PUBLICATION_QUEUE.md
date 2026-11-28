@@ -31,7 +31,7 @@ Uploads use the actual edition MP4's immutable S3 object key, **not** an ordinar
 
 Idempotency: each candidate has a stable hash over the run, assessment, package, edit plan, format, title, thumbnail, privacy, and schedule. The existing #178 resumable uploader saves each candidate's upload session and provider ID under a unique `studio-{candidate-hash}` identifier. On retry, the existing session is resumed. GET reconciles publishing state with the uploader after a crash. Two different candidates **of the same format** cannot simultaneously publish (or both become published) for the same run. The private UI does not expose publishing to the spectator.
 
-The existing direct replay publisher at `/v1/runs/{id}/publish/youtube` is retained for backwards compatibility and is explicitly labeled **legacy direct upload** in the operator UI. It is outside the Studio quality/approval queue and must not be used as a substitute for reviewed episodic publication. Migrating or disabling that independent legacy endpoint is a separate rollout decision.
+The old direct replay publisher (`POST /v1/runs/{id}/publish/youtube`) has been removed; this queue is the only upload path.
 
 ## Scheduling, throughput and recovery
 

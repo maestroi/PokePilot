@@ -365,12 +365,6 @@ export function getYouTubePublishStatus(runID: string, signal?: AbortSignal): Pr
   return requestJSON<YouTubePublishStatus>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, { signal })
 }
 
-export function publishToYouTube(runID: string, privacy: 'private' | 'unlisted' | 'public'): Promise<YouTubePublication> {
-  return requestJSON<YouTubePublication>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, {
-    method: 'POST',
-    body: JSON.stringify({ privacy })
-  })
-}
 
 export function highlightVideoURL(runID: string): string {
   return `/v1/runs/${encodeURIComponent(runID)}/highlights/video`
@@ -418,6 +412,29 @@ export function assessStudioRun(runID: string): Promise<{ assessment: StudioAsse
   })
 }
 
+export interface ProductionStatus {
+  stage: string
+  done: boolean
+  verdict?: string
+  error?: string
+  failures?: number
+  upload_private?: boolean
+  videos?: Record<string, string>
+  updated_at: number
+}
+export function getProductionStatus(runID: string, signal?: AbortSignal): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, { signal })
+}
+// Records a full_e2e run's private-upload opt-in; 503 when the replay server
+// has no uploader, so callers can refuse before queueing gameplay.
+export function requestProduction(runID: string, uploadPrivate: boolean): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, {
+    method: 'POST', body: JSON.stringify({ upload_private: uploadPrivate })
+  })
+}
+export function retryProduction(runID: string): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production/retry`, { method: 'POST', body: '{}' })
+}
 export function getStudioPublications(runID: string): Promise<StudioPublicationList> {
   return requestJSON<StudioPublicationList>(`/v1/runs/${encodeURIComponent(runID)}/studio/publications`)
 }

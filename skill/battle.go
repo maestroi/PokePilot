@@ -99,13 +99,33 @@ const mainMenuMax = 1
 var zbatDebug = os.Getenv("ZBAT") != ""
 
 // BattleOptions adds narrowly-scoped battle behavior for callers that need a
-// deliberate opening switch or major-trainer sequence awareness. Ordinary
-// Battle uses the zero value and retains the normal tactical policy.
+// deliberate opening switch, a held training lead, or major-trainer sequence
+// awareness. Ordinary Battle uses the zero value and retains the normal
+// tactical policy.
 type BattleOptions struct {
 	OpeningTrainingSwitch bool
+	// HoldTrainingLead suppresses voluntary tactical party switches so the
+	// active trainee keeps sole wild-XP credit. Direct Train estimates assume
+	// full per-encounter XP; letting the battle layer rotate in a stronger
+	// bench member splits that reward and can turn an executable session into
+	// a zero-level grind (Route 22 Oddish L17→19: triage 0bba5e027eaeb5c0).
+	HoldTrainingLead      bool
 	MinTrainingCarryLevel uint8
 	Sequence              BattleSequenceContext
+	// YieldWhen hands the live battle back to the caller at the next main
+	// menu where it reports true, returning ErrBattleYielded. Capture
+	// weakening uses it to stop attacking and start throwing balls.
+	YieldWhen func(game.BattleState) bool
+	// CallerOwnsAftermath returns the result at the battle boundary without
+	// settling. For one-way scripts (a Champion's ending) whose aftermath
+	// never returns control, the caller drives the scene to its own
+	// cartridge event instead of letting settlement press through credits.
+	CallerOwnsAftermath bool
 }
+
+// ErrBattleYielded reports that BattleOptions.YieldWhen returned control with
+// the battle still in progress at its main menu.
+var ErrBattleYielded = errors.New("skill: Battle: yielded to caller at the main menu")
 
 func Battle(m *emu.Emu, policy MovePolicy) (game.BattleResult, error) {
 	return BattleWithOptions(m, policy, BattleOptions{})
@@ -230,6 +250,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// the loss as a win.
 			result := battleDecoder.DecodeBattleResult(m)
 			observeBattleResult(m, result)
+			if options.CallerOwnsAftermath {
+				return result, nil
+			}
 			err := settleAfterBattle(m, runtimeDecoder)
 			if errors.Is(err, errBattleRestarted) {
 				continue
@@ -306,6 +329,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			})
 
 		case execution.Phase == game.BattleExecutionMainMenu:
+			if options.YieldWhen != nil && inBattle && options.YieldWhen(bs) {
+				return 0, ErrBattleYielded
+			}
 			if openingTrainingSwitch {
 				if inBattle {
 					decision := chooseTrainingCarrySwitchState(m.ROM(), resources, bs, options.MinTrainingCarryLevel)
@@ -379,12 +405,17 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// for this exact opponent. Do not tactically rotate through additional
 			// party members afterward: every extra participant further splits the
 			// trainee's XP and defeats the estimator's two-participant contract.
+			// Direct training holds the same invariant without an opening switch:
+			// the estimator prices full wild XP for the lead, so a tactical
+			// rotation under-delivers the session.
 			//
 			// Survival switches (active has no effective offense) are not capped:
 			// burning the voluntary budget on Feraligatr matchup ping-pong must
 			// not force Typhlosion to Tackle a Ghost until Curse KO's it
-			// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr).
-			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch {
+			// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr). HoldTrainingLead still
+			// refuses them — a zero-XP "survival" rotate is worse than ending the
+			// grind session via retreat/blackout and healing.
+			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch && !options.HoldTrainingLead {
 				if inBattle && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitchStateWithContext(m.ROM(), resources, bs, options.Sequence)
 					if decision.Switch {

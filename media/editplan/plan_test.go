@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/media/producer"
@@ -187,5 +188,73 @@ func TestAttemptOffset(t *testing.T) {
 	}
 	if _, err := OffsetMS([]Source{{1, 1}}, 2, 0); err == nil {
 		t.Fatal("unknown attempt accepted")
+	}
+}
+
+// Producer beat summaries are free text of any length; Build must fit each
+// field's own limit (Chapter is 100 bytes) on a rune boundary, not reject
+// its own plan.
+func TestBuildClipsLongBeatSummaryPerField(t *testing.T) {
+	_, tl := fixture(t)
+	long := ""
+	for len(long) < 300 {
+		long += "Pokémon league run reaches the champion room. "
+	}
+	tl[0].Events[0].Summary = long
+	a, err := producer.Assess(context.Background(), producer.Input{RunID: "edit-run", Timelines: tl}, nil, producer.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Build(a, tl, Episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range p.Segments {
+		for _, text := range []string{s.Overlay, s.Caption, s.NarrationCue, s.Chapter} {
+			if !utf8.ValidString(text) {
+				t.Fatalf("split rune in %q", text)
+			}
+		}
+		if len(s.Chapter) > 100 || len(s.Caption) > 240 {
+			t.Fatalf("oversized text: %+v", s)
+		}
+	}
+}
+
+// A twenty-minute battle keeps its opening and its decisive last stretch in
+// real time and cuts the middle, instead of playing all of it at 1x.
+func TestBuildSplitsLongBattle(t *testing.T) {
+	tl := farm.MediaTimeline{
+		Run:     farm.MediaRunSummary{RunID: "long", Status: "done", Goal: "Win"},
+		Attempt: 1, EndFrame: 200000, FramesPerSecond: 60,
+		Events: []farm.MediaEvent{
+			{Type: "boss_battle", StartFrame: 60000, Frame: 132000, Objective: "boss", Summary: "lost", Metadata: map[string]string{"result": "lost"}},
+			{Type: "boss_battle", StartFrame: 140000, Frame: 150000, Objective: "boss", Summary: "won", Metadata: map[string]string{"result": "won"}},
+			{Type: "badge_acquired", Frame: 170000, Summary: "acquired Final", Metadata: map[string]string{"badge": "Final"}},
+			{Type: "run_finished", Frame: 190000, Summary: "done"},
+		},
+	}.Normalized()
+	a, err := producer.Assess(context.Background(), producer.Input{RunID: "long", Timelines: []farm.MediaTimeline{tl}}, nil, producer.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Build(a, []farm.MediaTimeline{tl}, Episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := DefaultPolicy()
+	for _, s := range p.Segments {
+		if s.Action == Keep && s.Speed == 1 && s.EndMS-s.StartMS > pol.MaxLeadMS+pol.PostRollMS+1000 {
+			t.Fatalf("real-time segment %d-%dms is longer than the lead cap", s.StartMS, s.EndMS)
+		}
+	}
+	var chapters int
+	for _, s := range p.Segments {
+		if s.Chapter != "" {
+			chapters++
+		}
+	}
+	if chapters != len(a.Beats) {
+		t.Fatalf("want one chapter per beat, got %d: %+v", chapters, p.Segments)
 	}
 }

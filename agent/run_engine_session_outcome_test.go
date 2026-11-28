@@ -89,6 +89,7 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 		{cause: "catch_attempt_missed", want: true},
 		{cause: "static_capture_exhausted", want: true},
 		{cause: "train_progress_shortfall", want: true},
+		{cause: "train_retreat", want: true},
 		{cause: failureCauseCombatDefeat, want: true},
 		{cause: "fishing_no_shoreline", want: false},
 		{cause: "navigation_stalled", want: false},
@@ -97,7 +98,7 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 		t.Run(tc.cause, func(t *testing.T) {
 			policy := newRunFailurePolicy(3)
 			obj := Objective{Kind: KindCatch, Species: SpeciesID("tentacool")}
-			if tc.cause == "train_progress_shortfall" {
+			if tc.cause == "train_progress_shortfall" || tc.cause == "train_retreat" {
 				obj = Objective{Kind: KindTrain, Level: 20}
 			}
 			result := recoverableSessionResult(obj, tc.cause, Observation{Map: 5, X: 12, Y: 23})
@@ -106,6 +107,52 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 				t.Fatalf("%s ProductiveSession=%v, want %v (decision=%+v)", tc.cause, got.ProductiveSession, tc.want, got)
 			}
 		})
+	}
+}
+
+func TestRunFailurePolicyLevelGainingTrainRetreatResetsFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	blocked := Objective{Kind: KindGoTo, Place: "cinnabar island"}
+	train := Objective{Kind: KindTrain, Level: 40}
+
+	first := recoverableSessionResult(blocked, "blocked_a", Observation{Location: "pokemon mansion b1f", Map: 0xd8, X: 23, Y: 21})
+	if got := policy.recoverable(blocked, first, true, 0); got.Stop != StopUnset || !got.Recovered {
+		t.Fatalf("first ordinary failure = %+v; want recovered", got)
+	}
+
+	retreat := recoverableSessionResult(train, "train_retreat", Observation{Location: "pokemon mansion b1f", Map: 0xd8, X: 23, Y: 21})
+	retreat.Train = &TrainingEvidence{StartLevel: 38, EndLevel: 39, Battles: 6, Retreated: true}
+	got := policy.recoverable(train, retreat, true, 39)
+	if got.Stop != StopUnset || !got.Recovered || !got.ProductiveSession || got.ReplanReason != "train_retreat" {
+		t.Fatalf("level-gaining train retreat = %+v; want productive train_retreat replan", got)
+	}
+
+	second := recoverableSessionResult(blocked, "blocked_b", Observation{Location: "pokemon mansion b1f", Map: 0xd8, X: 23, Y: 21})
+	if got := policy.recoverable(blocked, second, true, 0); got.Stop != StopUnset || !got.Recovered {
+		t.Fatalf("failure after level-gaining retreat = %+v; productive retreat must reset consecutive budget", got)
+	}
+}
+
+func TestTrainRetreatProductiveSessionClearsDeadPositionWatchdog(t *testing.T) {
+	known := NewKnowledge(nil)
+	tile := Observation{Map: 0xd8, X: 23, Y: 21, PartyCount: 1, Party: []PartyMon{{Species: SpeciesID("blastoise"), Level: 39}}}
+	known.SawMap(tile.Map)
+	watchdog := newRunWatchdogPolicy(Budget{StagnationAfter: 200}, tile, known)
+	policy := newRunFailurePolicy(3)
+	train := Objective{Kind: KindTrain, Level: 40}
+
+	for round := 1; round <= deadPositionAfter+1; round++ {
+		retreat := recoverableSessionResult(train, "train_retreat", tile)
+		retreat.Train = &TrainingEvidence{StartLevel: 38 + round - 1, EndLevel: 39 + round - 1, Battles: 4, Retreated: true}
+		decision := policy.recoverable(train, retreat, true, uint8(retreat.Train.EndLevel))
+		if !decision.ProductiveSession {
+			t.Fatalf("round %d train retreat ProductiveSession=false; dead-position would stop a healthy grind", round)
+		}
+		watchdog.productiveSession(round)
+		got := watchdog.roundBoundary(round+1, tile, known, 0, true)
+		if got.Stop != StopUnset {
+			t.Fatalf("round %d watchdog = %+v; productive train retreat must not trip dead-position", round, got)
+		}
 	}
 }
 

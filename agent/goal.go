@@ -73,7 +73,7 @@ func ParseGoal(raw string) (Goal, error) {
 	if raw == "" {
 		return Goal{}, nil
 	}
-	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") {
+	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") || strings.EqualFold(raw, "hall-of-fame") || strings.EqualFold(raw, "hall of fame") {
 		return Goal{Kind: GoalEliteFour}, nil
 	}
 	if strings.EqualFold(raw, "dex") || strings.EqualFold(raw, "pokedex") || strings.EqualFold(raw, "pokédex") {
@@ -124,7 +124,7 @@ func plannerGoalPreset(raw string) (Goal, bool) {
 		}
 	}
 	switch normalized {
-	case "beat the elite four and champion", "beat the elite four and the champion":
+	case "beat the elite four and champion", "beat the elite four and the champion", "reach the hall of fame":
 		return Goal{Kind: GoalEliteFour}, true
 	case "complete the obtainable pokedex", "complete the obtainable pokédex", "complete the pokedex", "complete the pokédex":
 		return Goal{Kind: GoalDex}, true
@@ -144,6 +144,7 @@ func PlannerGoal(raw string) (Goal, bool, error) {
 		return g, true, nil
 	}
 	if strings.EqualFold(raw, "elite-four") || strings.EqualFold(raw, "elite four") ||
+		strings.EqualFold(raw, "hall-of-fame") || strings.EqualFold(raw, "hall of fame") ||
 		strings.EqualFold(raw, "dex") || strings.EqualFold(raw, "pokedex") || strings.EqualFold(raw, "pokédex") {
 		g, err := ParseGoal(raw)
 		return g, true, err
@@ -186,6 +187,18 @@ func evaluateGoal(g Goal, obs Observation) GoalStatus {
 		return GoalStatus{Summary: "no deterministic goal"}
 	case GoalEliteFour:
 		n := len(obs.Badges)
+		if count, projected := obs.Story.Lookup(ProgressCampaignBadges); projected {
+			// Prefer the profile's eight-badge campaign tally over a combined
+			// Johto + Kanto badge list. Gen-I profiles can keep the legacy
+			// badge-list fallback until they project this optional fact.
+			n = count.Value
+		}
+		if n < 0 {
+			n = 0
+		}
+		if n > 8 {
+			n = 8
+		}
 		// Full-campaign progress deliberately includes the ending itself as a
 		// ninth step. Eight badges therefore means 8/9 rather than 100%; the
 		// final step is only credited once the portable Hall of Fame fact is set.

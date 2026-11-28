@@ -3,7 +3,7 @@ import type { DashboardQuery } from '../shared/api/types'
 // Runs page state lives in the operator search string next to `run` (the
 // inspected run), so reload and back/forward restore it. Facet keys are the
 // archive API's own parameter names, which keeps the mapping a straight copy.
-export const ARCHIVE_FACETS = ['game', 'outcome', 'model', 'goal', 'deployment', 'play_style', 'how', 'starter', 'compute', 'experiment'] as const
+export const ARCHIVE_FACETS = ['game', 'outcome', 'model', 'goal', 'deployment', 'play_style', 'how', 'starter', 'compute', 'experiment', 'purpose'] as const
 export type ArchiveFacet = typeof ARCHIVE_FACETS[number]
 export const ARCHIVE_SORTS = ['finished', 'progress', 'runtime', 'frames', 'rounds', 'planner_time', 'strategic_calls'] as const
 export type ArchiveSort = typeof ARCHIVE_SORTS[number]

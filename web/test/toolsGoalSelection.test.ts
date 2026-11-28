@@ -14,9 +14,29 @@ test('tools run goal stays independent from play style and purpose', () => {
   assert.match(source, /Debug coverage · exercise new interactions/)
 })
 
-test('Gen2 launcher allows unqualified 7/8-badge runs with visible warning', () => {
-  assert.match(source, /\['Earn 7 badges\.', '7 badges · Glacier · Pryce · experimental'\]/)
-  assert.match(source, /\['Earn 8 badges\.', '8 badges · Rising · Clair · experimental'\]/)
+test('Gen2 launcher keeps badge goals and one Hall of Fame target', () => {
+  assert.match(source, /\['Earn 7 badges\.', '7 badges · Glacier · Pryce'\]/)
+  assert.match(source, /\['Earn 8 badges\.', '8 badges · Rising · Clair'\]/)
+  assert.match(source, /\['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'\]/)
+  // Internal Elite Four and Champion milestones must not appear as separate
+  // stop targets; the single Hall of Fame run progresses through them all.
+  assert.doesNotMatch(source, /\['progress:gs_league_(?:will|koga|bruno|karen|lance)_defeated',/)
+  assert.match(source, /Will, Koga, Bruno, Karen, and Lance are automatic internal stages/)
+  assert.doesNotMatch(source, /Ice Path, Clair and Dragon’s Den are unfinished/)
+  assert.match(source, /\['elite-four', 'Hall of Fame · 8 Johto badges \+ Elite Four & Champion · experimental'\]/)
   assert.doesNotMatch(source, /<option value="Earn (7|8) badges\." disabled/)
-  assert.match(source, /Only cartridge-observed badge flags count as success/)
+  assert.match(source, /\['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'\]/)
+  assert.match(source, /\['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'\]/)
+  assert.match(source, /\['progress:gs_kanto_thunder_badge_earned', 'Thunder Badge · Lt\. Surge · Kanto · experimental'\]/)
+  assert.match(source, /Only cartridge-observed badge, Hall of Fame and Red events count as success/)
+})
+
+test('Gen2 launcher exposes every Kanto badge, 16 badges and the full game', () => {
+  for (const badge of ['thunder', 'marsh', 'rainbow', 'soul', 'cascade', 'boulder', 'volcano', 'earth']) {
+    assert.match(source, new RegExp(`\\['progress:gs_kanto_${badge}_badge_earned', '`))
+  }
+  assert.match(source, /\['Earn 16 badges\.', 'All 16 badges · Johto \+ Kanto/)
+  assert.match(source, /\[GEN2_FULL_GAME_GOAL, 'Full game · 16 badges \+ Red on Mt\. Silver/)
+  // Hall of Fame is the Johto League, never full-game completion.
+  assert.match(source, /Hall of Fame is the Johto League, not completion/)
 })

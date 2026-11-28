@@ -233,6 +233,13 @@ func mandatoryWarpExitEdge(g *world.Graph, m *emu.Emu) (world.Edge, bool) {
 	return exit, true
 }
 
+// ReachNearestPokemonCenter is the exported Center-travel preflight for callers
+// that own a multi-segment gameplay loop (Train heal-resume after retreat).
+// It selects a reachable Pokemon Center and Travels there without naming a map.
+func ReachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, maxBattles int) (TravelResult, string, error) {
+	return reachNearestPokemonCenter(m, romData, policy, maxBattles)
+}
+
 // reachNearestPokemonCenter owns the whole "get to a Center" preflight shared
 // by Bill's PC and VirtualTrade. Normally it selects a Center and delegates to
 // TravelFlee. If component-aware routing cannot name any Center while the

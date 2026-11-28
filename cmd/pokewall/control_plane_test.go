@@ -67,3 +67,15 @@ func TestExperimentPersistWriteOrderIsStable(t *testing.T) {
 		t.Fatalf("experiment persist order = %v, want %v", experiments, want)
 	}
 }
+
+func TestE2EPurposeMigrationAddsIndexedDatabaseColumn(t *testing.T) {
+	for _, snippet := range []string{
+		"ALTER TABLE runs ADD COLUMN IF NOT EXISTS purpose",
+		"runs_purpose_ended_idx",
+		"ON runs (purpose, ended_at DESC",
+	} {
+		if !strings.Contains(controlPlaneMigration007, snippet) {
+			t.Fatalf("E2E migration missing %q", snippet)
+		}
+	}
+}

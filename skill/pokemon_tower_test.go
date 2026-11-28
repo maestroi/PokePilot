@@ -21,6 +21,11 @@ func TestPokemonTowerAvailable(t *testing.T) {
 		undergroundWestEastMap,
 		undergroundRoute8Map,
 		route8Map,
+		semanticRoute9Map, // ROUTE_9; Cerulean-side Lavender approach
+		route10Map,
+		rockTunnelPokeCenterMap,
+		rockTunnel1FMap,
+		rockTunnelB1FMap,
 		lavenderTownMap,
 		lavenderPokemonCenterMap,
 		0x96, // LAVENDER_MART

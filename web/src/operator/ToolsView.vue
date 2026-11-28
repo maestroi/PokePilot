@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowPathIcon, ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { createRun, getModels } from '../shared/api/client'
+import { createRun, getModels, requestProduction } from '../shared/api/client'
 import type { DecisionEngineSpec, ModelDeployment, RunSpec } from '../shared/api/types'
 import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
@@ -9,8 +9,7 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
-import { beginFullE2E, fullE2E } from './fullE2EManager'
-import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
+import { GEN2_FULL_GAME_GOAL, fullGameGoal, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
 import { operatorHref } from '../shared/urls'
 
 const launchDefaults = readRunLaunchDefaults()
@@ -45,6 +44,7 @@ const form = reactive<RunSpec>({
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
   reasoning_effort: '',
+  training_capture: false,
   fps: launchDefaults.fps,
   max_rounds: 0,
   max_frames: 0,
@@ -136,9 +136,11 @@ watch(deployments, (next) => {
 }, { immediate: true })
 
 const runMode = ref<RunMode>('standard')
-const uploadPrivate = ref(false)
-const confirmPrivateUpload = ref(false)
 const fullE2ESelected = computed(() => runMode.value === 'full-e2e')
+// Real channel uploads need two explicit ticks, and never carry over to the next launch.
+const uploadPrivate = ref(false)
+const uploadAcknowledged = ref(false)
+watch(uploadPrivate, () => { uploadAcknowledged.value = false })
 const submitting = ref(false)
 const error = ref('')
 const createdRunID = ref('')
@@ -159,13 +161,10 @@ watch(runMode, mode => {
       runMode.value = 'standard'
       return
     }
-    form.goal = FULL_E2E_GOAL
+    form.goal = fullGameGoal(form.game)!
     form.recovery_profile = 'resilient'
     form.endless = false
     form.random_seed = false
-  } else {
-    uploadPrivate.value = false
-    confirmPrivateUpload.value = false
   }
 })
 watch(() => [form.game, form.planner], () => {
@@ -214,22 +213,40 @@ watch(() => form.game, (game, previous) => {
   }
   if (game === 'pokemon-gold' || game === 'pokemon-silver') {
     form.planner = 'llm'
-    form.goal = 'Play through the current supported Gen 2 frontier.'
+    form.goal = GEN2_FULL_GAME_GOAL
   } else if (previous === 'pokemon-gold' || previous === 'pokemon-silver') {
     form.goal = defaultGoalForPlayStyle('adventure')
   }
 })
 
 const gen2Goals = [
-  ['Play through the current supported Gen 2 frontier.', 'Current frontier · Mineral Badge / Jasmine'],
+  [GEN2_FULL_GAME_GOAL, 'Full game · 16 badges + Red on Mt. Silver · experimental'],
   ['Earn 1 badge.', '1 badge · Zephyr · Falkner'],
   ['Earn 2 badges.', '2 badges · Hive · Bugsy'],
   ['Earn 3 badges.', '3 badges · Plain · Whitney'],
   ['Earn 4 badges.', '4 badges · Fog · Morty'],
   ['Earn 5 badges.', '5 badges · Storm · Chuck'],
   ['Earn 6 badges.', '6 badges · Mineral · Jasmine'],
-  ['Earn 7 badges.', '7 badges · Glacier · Pryce · experimental'],
-  ['Earn 8 badges.', '8 badges · Rising · Clair · experimental'],
+  ['Earn 7 badges.', '7 badges · Glacier · Pryce'],
+  ['Earn 8 badges.', '8 badges · Rising · Clair'],
+  ['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'],
+  // The League's five trainer victories remain internal milestones of the
+  // Hall of Fame objective, not separate New Run stopping targets.
+  ['elite-four', 'Hall of Fame · 8 Johto badges + Elite Four & Champion · experimental'],
+  ['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'],
+  ['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'],
+  // Kanto badges in the order the Gen2 controller earns them.
+  ['progress:gs_kanto_thunder_badge_earned', 'Thunder Badge · Lt. Surge · Kanto · experimental'],
+  ['progress:gs_kanto_marsh_badge_earned', 'Marsh Badge · Sabrina · Kanto · experimental'],
+  ['progress:gs_kanto_rainbow_badge_earned', 'Rainbow Badge · Erika · Kanto · experimental'],
+  ['progress:gs_kanto_soul_badge_earned', 'Soul Badge · Janine · Kanto · experimental'],
+  ['progress:gs_kanto_rail_pass_received', 'Magnet Train PASS · Copycat · Kanto · experimental'],
+  ['progress:gs_kanto_cascade_badge_earned', 'Cascade Badge · Misty · Kanto · experimental'],
+  ['progress:gs_kanto_boulder_badge_earned', 'Boulder Badge · Brock · Kanto · experimental'],
+  ['progress:gs_kanto_volcano_badge_earned', 'Volcano Badge · Blaine · Kanto · experimental'],
+  ['progress:gs_kanto_earth_badge_earned', 'Earth Badge · Blue · Kanto · experimental'],
+  ['Earn 16 badges.', 'All 16 badges · Johto + Kanto · experimental'],
+  ['Play through the current supported Gen 2 frontier.', 'Legacy preset · stops at Mineral Badge'],
   ['', 'Free play · no automatic stop']
 ] as const
 
@@ -280,16 +297,12 @@ async function submit(): Promise<void> {
     return
   }
 
-  if (fullE2ESelected.value && fullE2E.working) {
-    error.value = 'A full production test is already active in this browser. Finish or stop it before starting another.'
-    return
-  }
   if (fullE2ESelected.value && !supportsFullE2E(form)) {
-    error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
+    error.value = 'Full E2E supports Pokémon Red, Gold or Silver with the LLM planner.'
     return
   }
-  if (fullE2ESelected.value && uploadPrivate.value && !confirmPrivateUpload.value) {
-    error.value = 'Confirm the two real private YouTube uploads before starting.'
+  if (fullE2ESelected.value && uploadPrivate.value && !uploadAcknowledged.value) {
+    error.value = 'Acknowledge the two real private YouTube uploads, or untick private upload.'
     return
   }
 
@@ -311,27 +324,24 @@ async function submit(): Promise<void> {
       wild_encounters: isLLM.value ? form.wild_encounters : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : '',
       decision_engine: decisionRequest(),
+      training_capture: isLLM.value && !!form.training_capture,
       recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     if (fullE2ESelected.value) spec = productionRunSpec(spec)
+    if (fullE2ESelected.value && uploadPrivate.value) {
+      // Record the opt-in first: an unconfigured uploader fails here, not
+      // after hours of gameplay.
+      if (!spec.run_id) spec.run_id = 'e2e-' + crypto.randomUUID().slice(0, 13)
+      await requestProduction(spec.run_id, true)
+    }
     const response = await createRun(spec)
+    uploadPrivate.value = false
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
     createdRunID.value = returnedID || spec.run_id
     if (!createdRunID.value) {
       error.value = 'Run was queued, but the wall did not return a run id.'
     } else if (fullE2ESelected.value) {
-      // The wall has accepted this one run. Start the production pipeline
-      // against that run ID (fresh=false), never queue a duplicate.
-      // This shared coordinator survives operator route changes.
-      void beginFullE2E({
-        runID: createdRunID.value,
-        fresh: false,
-        starter: spec.starter,
-        seed: spec.seed,
-        deployment: spec.llm_deployment || '',
-        uploadPrivate: uploadPrivate.value,
-        pollMS: 10000
-      })
+      // pokereplay produces media for finished full_e2e runs on its own.
       window.history.pushState(null, '', operatorHref('media', {
         section: 'e2e', run: createdRunID.value, job: ''
       }, window.location.search))
@@ -371,20 +381,20 @@ async function submit(): Promise<void> {
               <option value="full-e2e" :disabled="!supportsFullE2E(form)">Full E2E · complete game → episode + Short</option>
             </select>
           </label>
-          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E currently requires Pokémon Red and the LLM planner.</p>
+          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E requires Pokémon Red, Gold or Silver and the LLM planner.</p>
           <template v-if="fullE2ESelected">
             <p class="mt-2 text-xs text-slate-300">
-              The goal is locked to the Champion. After this run is queued, automatically verify the Hall of Fame, render a broadcast replay and both edited formats, and queue private publication candidates.
+              The goal is locked to the Champion. When the run finishes, the server automatically verifies the Hall of Fame, renders a broadcast replay and both edited formats, and queues private publication candidates.
             </p>
-            <label class="mt-3 flex items-start gap-2 text-sm text-slate-200">
-              <input v-model="uploadPrivate" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" @change="confirmPrivateUpload = false" />
-              <span>Also upload episode and Short privately to YouTube <span class="block text-xs text-slate-400">Off by default. Uploads require existing server-side credentials and Studio quality gates.</span></span>
+            <p class="mt-2 text-xs text-slate-500">The replay server runs production by itself once the game finishes; no browser needs to stay open. Without upload, candidates wait in Studio for review.</p>
+            <label class="mt-3 flex items-start gap-2 text-xs text-slate-300">
+              <input v-model="uploadPrivate" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
+              <span>Also upload the episode and Short to YouTube as <strong>private</strong> videos once they pass the quality gate</span>
             </label>
-            <label v-if="uploadPrivate" class="mt-3 flex items-start gap-2 rounded-md border border-white/15 p-2 text-sm text-slate-200">
-              <input v-model="confirmPrivateUpload" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" />
-              <span>I confirm two real private uploads to the configured YouTube account.</span>
+            <label v-if="uploadPrivate" class="mt-2 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 p-2 text-xs text-amber-200">
+              <input v-model="uploadAcknowledged" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-amber-400 focus:ring-amber-400" />
+              <span>I understand this makes two real uploads to the configured channel, consuming quota. They are always private; public or unlisted is never used.</span>
             </label>
-            <p class="mt-2 text-xs text-slate-500">The pipeline continues while the operator browser is open, even if you switch screens. Closing or reloading the browser stops further coordination; already queued server jobs continue. Server-side resumability is tracked in #2794.</p>
           </template>
         </div>
 
@@ -458,7 +468,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges to attempt the experimental Gold/Silver campaign now. The agent can attempt Pryce and Radio Tower, but Ice Path, Clair and Dragon’s Den are unfinished: a run may fail before reaching 8. Only cartridge-observed badge flags count as success. The current supported frontier preset still stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Full game ends only when Red on Mt. Silver is defeated; Hall of Fame is the Johto League, not completion. Will, Koga, Bruno, Karen, and Lance are automatic internal stages, not separate run goals. Only cartridge-observed badge, Hall of Fame and Red events count as success. Post-Hall-of-Fame stages are experimental until a live run verifies them; the legacy supported-frontier preset stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -642,6 +652,14 @@ async function submit(): Promise<void> {
             <option value="strict">Strict · stop after bounded recovery</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Resilient escalates from local resume to progressively older milestone checkpoints instead of ending the campaign on a stuck/failed attempt.</span>
+        </label>
+
+        <label v-if="isLLM" class="sm:col-span-2 flex items-start gap-3 rounded-md border border-white/8 bg-black/10 px-3 py-3 text-sm text-slate-300">
+          <input v-model="form.training_capture" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
+          <span>
+            <span class="block font-medium">Collect planner training data</span>
+            <span class="mt-1 block text-xs text-slate-500">Save the current LLM's decisions and matched gameplay outcomes as a compressed run artifact. No extra model is used. Off by default.</span>
+          </span>
         </label>
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">

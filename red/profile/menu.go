@@ -80,6 +80,9 @@ func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMe
 		return offset, true
 	case game.StartMenuItems:
 		return offset + 1, true
+	case game.StartMenuSave:
+		// POKéMON, ITEM and the player's name come before SAVE.
+		return offset + 3, true
 	default:
 		return 0, false
 	}

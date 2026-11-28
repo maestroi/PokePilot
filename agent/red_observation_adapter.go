@@ -166,7 +166,7 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 		}
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: int(it.Quantity)})
 	}
-	obs.ReclaimableBagSlots = len(skill.RetiredBagItems(romData, &mem))
+	obs.ReclaimableBagSlots = skill.ReclaimableBagSlots(romData, &mem)
 
 	for _, cap := range skill.FieldCapabilities(&mem) {
 		obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{
@@ -275,8 +275,14 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 	obs.ChallengeProfiles = gen1ChallengeProfiles(romData)
 	obs.Learnsets = gen1Learnsets(romData)
 	obs.Catalog = facts.Catalog(obs)
+	fundingShort := progressionFundingShortfall(obs) > 0
 	for i := range obs.Catalog.Destinations {
 		destination := &obs.Catalog.Destinations[i]
+		if fundingShort {
+			if redDestination, ok := skill.Place(destination.Place); ok {
+				destination.TrainerPrize = skill.UnbeatenTrainerPrize(romData, &mem, redDestination.Map)
+			}
+		}
 		if !destination.Center {
 			continue
 		}

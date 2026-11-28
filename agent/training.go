@@ -25,11 +25,32 @@ const trainSessionBattleBudget = 20
 // (an L89 lead on L5 grass) still refuse, keeping the dead-end escape.
 const trainSessionBattleCeiling = 3 * trainSessionBattleBudget
 
-// trainSessionBattles is the battle allowance for one session in the measured
-// habitat: the ordinary budget, stretched (with slack for wild variance) to
-// reach the next level, never past trainSessionBattleCeiling.
-func trainSessionBattles(e TrainingEstimate) int {
+// trainNextLevelSessionBattles is the battle allowance one session may spend to
+// deliver the next level: ordinary budget, stretched with slack for wild
+// variance, never past trainSessionBattleCeiling. Campaign re-pricing uses this
+// (times preparationSessionCeiling) so a multi-level readiness gap is not
+// mistaken for a single-session target that would inflate the campaign budget.
+func trainNextLevelSessionBattles(e TrainingEstimate) int {
 	n := e.NextLevelEncounters + e.NextLevelEncounters/4
+	if n < trainSessionBattleBudget {
+		return trainSessionBattleBudget
+	}
+	if n > trainSessionBattleCeiling {
+		return trainSessionBattleCeiling
+	}
+	return n
+}
+
+// trainSessionBattles is the battle allowance for one Train executor session:
+// stretch toward the full objective target when that still fits the ceiling so
+// a short multi-level rung (Oddish L17→19 on Route 22) can finish in one
+// objective instead of stopping after the next level.
+func trainSessionBattles(e TrainingEstimate) int {
+	need := e.NextLevelEncounters
+	if e.EstimatedEncounters > need {
+		need = e.EstimatedEncounters
+	}
+	n := need + need/4
 	if n < trainSessionBattleBudget {
 		return trainSessionBattleBudget
 	}
@@ -83,7 +104,7 @@ func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowl
 		return e
 	}
 	budgeted := *e
-	budgeted.SessionBudget = trainSessionBattles(*e) * preparationSessionCeiling
+	budgeted.SessionBudget = trainNextLevelSessionBattles(*e) * preparationSessionCeiling
 	classifyTrainingEstimate(&budgeted)
 	if budgeted.NextLevelEncounters > trainSessionBattleCeiling {
 		budgeted.Viability = TrainingOutsideBudget
@@ -290,23 +311,28 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 	}
 	estimate.EstimatedEncounters = int((uint64(estimate.XPRemaining) + uint64(estimate.XPPerEncounter) - 1) / uint64(estimate.XPPerEncounter))
 
-	switch {
-	case estimate.EstimatedEncounters > budget:
-		estimate.Viability = TrainingOutsideBudget
-	case estimate.EstimatedEncounters*4 > budget*3:
-		estimate.Viability = TrainingExpensive
-	default:
-		estimate.Viability = TrainingViable
-	}
+	estimate.Viability = trainingViability(estimate.EstimatedEncounters, budget)
 	return estimate, nil
 }
 
+func trainingViability(encounters, budget int) TrainingViability {
+	switch {
+	case encounters > budget:
+		return TrainingOutsideBudget
+	case encounters*4 > budget*3:
+		return TrainingExpensive
+	default:
+		return TrainingViable
+	}
+}
+
 const (
-	// A target more than three levels below the strongest local wild is treated
-	// as unsafe for direct grinding. The actual battle layer still evaluates
-	// type/move matchups turn by turn; this is only the coarse pre-battle gate
-	// that decides whether the weak mon should be protected by switch training.
-	directTrainingWildGap = 3
+	// Direct grinding is only treated as safe when every local wild is strictly
+	// below the trainee. Equal-level bands used to keep direct mode under a "+3"
+	// cushion, but HoldTrainingLead against Rock Tunnel L21 wilds faints a L21
+	// Zubat in one battle (triage a5a7c1cdb8301e71): heal-resume then burns the
+	// train_retreat budget with zero XP. When a healthy carry exists, switch
+	// training is the safe method even for equal-level grass.
 	// A carry may trail the strongest local wild slightly because the battle
 	// switch policy also considers moves, HP and typing. Requiring it to be at
 	// least within two levels keeps "L12 target + L15 backup in Victory Road"
@@ -404,7 +430,7 @@ func applyPartyTrainingMethod(party state.PartyState, targetSlot int, slots []sk
 	}
 
 	target := party.Mons[targetSlot]
-	if int(wildMax) <= int(target.Level)+directTrainingWildGap {
+	if int(wildMax) < int(target.Level) {
 		return estimate
 	}
 

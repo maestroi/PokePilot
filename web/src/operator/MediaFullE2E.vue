@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getDashboard, getModels, studioEditVideoURL } from '../shared/api/client'
+import { getBroadcastReplayStatus, getDashboard, getModels, getProductionStatus, getRun, retryProduction, getStudioPublications, type ProductionStatus, studioEditVideoURL } from '../shared/api/client'
+import type { DashboardRun, ReplayStatus, StudioPublicationCandidate } from '../shared/api/types'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { deploymentOptionLabel, deploymentSelectable, servesStrategist } from './llmDeployments'
-import { beginFullE2E, fullE2E, stopFullE2E } from './fullE2EManager'
+import { beginFullE2E, fullE2E, openE2EHistory, stopFullE2E } from './fullE2EManager'
+import { isFullCampaignSource } from './e2eHistory'
+import { observeE2E, historyLabel } from './e2eRunStatus'
 import { formatMediaHref, type MediaState } from './mediaQuery'
 
 const props = defineProps<{ state: MediaState }>()
+const inspectedID = ref(props.state.run || fullE2E.runID)
 const mode = ref<'new' | 'existing'>(props.state.run ? 'existing' : 'new')
 const existingID = ref(props.state.run)
+const game = ref<'pokemon-red' | 'pokemon-gold' | 'pokemon-silver'>('pokemon-red')
 const starter = ref('squirtle')
+const starterOptions = computed(() => game.value === 'pokemon-red'
+  ? ['squirtle', 'bulbasaur', 'charmander']
+  : ['cyndaquil', 'totodile', 'chikorita'])
+watch(game, () => { starter.value = starterOptions.value[0] })
+const gameLabel = computed(() => ({ 'pokemon-red': 'Pokémon Red', 'pokemon-gold': 'Pokémon Gold', 'pokemon-silver': 'Pokémon Silver' })[game.value])
 const deployment = ref('')
 const seed = ref(1)
 const uploadPrivate = ref(fullE2E.uploadPrivate)
@@ -23,17 +33,123 @@ const stages = computed(() => fullE2E.stages)
 const outputs = computed(() => fullE2E.outputs)
 
 const models = usePollingResource(getModels, { intervalMs: 30000 })
-const recent = usePollingResource(signal => getDashboard({ status: 'done', limit: 60 }, signal), { intervalMs: 30000 })
+// Discover runs from the wall even when no browser receipt survived. Active
+// and finished records are queried independently so active runs do not hide
+// the run the operator launched before a browser reload.
+const recent = usePollingResource(async signal => {
+  const [e2eActive, e2eDone, legacyActive, legacyDone] = await Promise.all([
+    getDashboard({ active: true, purpose: 'full_e2e', limit: 200 }, signal),
+    getDashboard({ status: 'done', purpose: 'full_e2e', limit: 200 }, signal),
+    getDashboard({ active: true, limit: 100 }, signal),
+    getDashboard({ status: 'done', limit: 100 }, signal)
+  ])
+  const unique = new Map<string, DashboardRun>()
+  // Only short compatibility discovery uses Champion goals; all explicitly
+  // tagged E2E runs are fetched with indexed database queries first.
+  for (const run of [...legacyDone.runs, ...legacyActive.runs, ...e2eDone.runs, ...e2eActive.runs]) unique.set(run.run_id, run)
+  return { runs: [...unique.values()] }
+}, { intervalMs: 30000 })
 const selections = computed(() => (models.data.value?.deployments || []).filter(d => servesStrategist(d) && deploymentSelectable(d)))
 watch(selections, value => {
   if (!value.some(item => item.id === deployment.value)) deployment.value = value[0]?.id || ''
 }, { immediate: true })
 watch(() => props.state.run, id => {
-  if (id && !working.value) {
-    existingID.value = id
-    mode.value = 'existing'
+  if (id) {
+    inspectedID.value = id
+    if (!working.value) {
+      existingID.value = id
+      mode.value = 'existing'
+    }
   }
 })
+watch(() => fullE2E.runID, id => {
+  if (id && fullE2E.working) inspectedID.value = id
+})
+
+const foundSources = computed(() => {
+  const map = new Map<string, { run: DashboardRun | null; saved: boolean; updatedAt: number }>()
+  for (const saved of fullE2E.history) {
+    map.set(saved.runID, { run: null, saved: true, updatedAt: saved.updatedAt })
+  }
+  for (const run of recent.data.value?.runs || []) {
+    if (!map.has(run.run_id) && !isFullCampaignSource(run)) continue
+    const previous = map.get(run.run_id)
+    map.set(run.run_id, {
+      run, saved: Boolean(previous?.saved),
+      updatedAt: Math.max(previous?.updatedAt || 0, Number(run.ended_at || run.queued_at || 0) * 1000)
+    })
+  }
+  if (fullE2E.runID && !map.has(fullE2E.runID)) map.set(fullE2E.runID, { run: null, saved: true, updatedAt: Date.now() })
+  if (props.state.run && !map.has(props.state.run)) map.set(props.state.run, { run: null, saved: false, updatedAt: 0 })
+  return [...map.entries()]
+    // Durable E2E identity should stay visible above legacy Champion guesses,
+    // even when the user has thousands of ordinary recent campaigns.
+    .sort((a, b) =>
+      Number(b[1].run?.purpose === 'full_e2e') - Number(a[1].run?.purpose === 'full_e2e') ||
+      b[1].updatedAt - a[1].updatedAt
+    )
+    .map(([id, meta]) => ({ id, ...meta }))
+})
+type SelectedEvidence = {
+  run: DashboardRun | null
+  replay: ReplayStatus | null
+  publications: StudioPublicationCandidate[] | null
+  production: ProductionStatus | null
+  replayError: string
+  publicationsError: string
+}
+const evidence = usePollingResource<SelectedEvidence>(async signal => {
+  const id = inspectedID.value
+  if (!id) return { run: null, replay: null, publications: null, production: null, replayError: '', publicationsError: '' }
+  const run = await getRun(id, signal)
+  const [replay, pubs, production] = await Promise.allSettled([getBroadcastReplayStatus(id, signal), getStudioPublications(id), getProductionStatus(id, signal)])
+  return {
+    run,
+    replay: replay.status === 'fulfilled' ? replay.value : null,
+    publications: pubs.status === 'fulfilled' ? pubs.value.candidates : null,
+    production: production.status === 'fulfilled' ? production.value : null,
+    replayError: replay.status === 'rejected' ? String(replay.reason) : '',
+    publicationsError: pubs.status === 'rejected' ? String(pubs.reason) : ''
+  }
+}, { intervalMs: 10000 })
+watch(inspectedID, () => { void evidence.retry() })
+// Never render stale evidence from a previously selected run as the outcome
+// of a different one while its fetch is in progress.
+const selectedEvidence = computed(() => evidence.data.value?.run?.run_id === inspectedID.value ? evidence.data.value : null)
+const observed = computed(() => selectedEvidence.value?.run
+  ? observeE2E(selectedEvidence.value.run, selectedEvidence.value.replay, selectedEvidence.value.publications)
+  : null)
+function inspectRun(id: string): void {
+  if (!/^[-_a-zA-Z0-9]{3,100}$/.test(id)) return
+  inspectedID.value = id
+  existingID.value = id
+  mode.value = 'existing'
+  if (!fullE2E.working) openE2EHistory(id)
+  const url = formatMediaHref({ ...props.state, tab: 'e2e', run: id, job: '' }, window.location.search)
+  window.history.replaceState(null, '', url)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+const retryingProduction = ref(false)
+const productionRetryError = ref('')
+async function retryFailedProduction(): Promise<void> {
+  retryingProduction.value = true
+  productionRetryError.value = ''
+  try {
+    await retryProduction(inspectedID.value)
+    await evidence.retry()
+  } catch (cause) {
+    productionRetryError.value = cause instanceof Error ? cause.message : 'Retry failed'
+  } finally {
+    retryingProduction.value = false
+  }
+}
+function selectedRunLink(section: 'live' | 'studio' | 'library'): string {
+  if (section === 'live') return '?run=' + encodeURIComponent(inspectedID.value) + '#live'
+  return formatMediaHref({ ...props.state, run: inspectedID.value, job: '', tab: section }, window.location.search)
+}
+function candidateLabel(candidate: StudioPublicationCandidate): string {
+  return candidate.proposal.format + ' · ' + candidate.state + (candidate.provider_id ? ' · video ' + candidate.provider_id : '')
+}
 
 const sourceLink = computed(() => currentID.value
   ? formatMediaHref({ ...props.state, tab: 'studio', run: currentID.value, job: '' }, window.location.search)
@@ -43,7 +159,7 @@ const libraryLink = computed(() => currentID.value
   : '')
 const canStart = computed(() => !working.value && (mode.value === 'new' ? Boolean(deployment.value && Number.isSafeInteger(seed.value) && seed.value >= 0)
   : Boolean(existingID.value.trim())) && (!uploadPrivate.value || uploadAcknowledged.value))
-const outcome = computed(() => complete.value ? 'passed' : failure.value ? 'failed' : working.value ? 'running' : 'not_started')
+const outcome = computed(() => working.value ? 'running' : fullE2E.lastStatus)
 const stageCount = computed(() => stages.value.filter(s => s.state === 'ready').length)
 const report = computed(() => ({
   version: 1, run_id: currentID.value, status: outcome.value,
@@ -59,9 +175,11 @@ function newID(): string {
 async function start(): Promise<void> {
   if (!canStart.value) return
   const id = mode.value === 'new' ? newID() : existingID.value.trim()
+  inspectedID.value = id
   await beginFullE2E({
     runID: id,
     fresh: mode.value === 'new',
+    game: game.value,
     starter: starter.value,
     seed: seed.value,
     deployment: deployment.value,
@@ -90,11 +208,11 @@ function downloadReport(): void {
     <section class="ui-bay self-start" aria-labelledby="full-e2e-title">
       <div class="ui-bay-header">
         <h2 id="full-e2e-title">Full production test</h2>
-        <span class="text-meta text-fg-2">Pokémon Red</span>
+        <span class="text-meta text-fg-2">{{ gameLabel }}</span>
       </div>
       <div class="space-y-4 p-3">
         <p class="text-meta text-fg-2">
-          Play through the Champion and verified Hall of Fame, render an episode and a portrait Short, then prepare private YouTube publication candidates. No videos upload unless explicitly enabled below.
+          Play the whole game (Red: Champion and Hall of Fame; Gold/Silver: 16 badges and Red on Mt. Silver), render an episode and a portrait Short, then prepare private YouTube publication candidates. No videos upload unless explicitly enabled below.
         </p>
         <fieldset :disabled="working" class="space-y-3">
           <legend class="text-meta font-semibold">Source</legend>
@@ -103,6 +221,14 @@ function downloadReport(): void {
             <label class="flex items-center gap-2 text-sm"><input v-model="mode" type="radio" value="existing" /> Existing run</label>
           </div>
           <template v-if="mode === 'new'">
+            <label class="block space-y-1 text-meta" for="e2e-game">
+              <span>Game</span>
+              <select id="e2e-game" v-model="game" class="ui-input h-10 w-full">
+                <option value="pokemon-red">Pokémon Red</option>
+                <option value="pokemon-gold">Pokémon Gold · experimental</option>
+                <option value="pokemon-silver">Pokémon Silver · experimental</option>
+              </select>
+            </label>
             <label class="block space-y-1 text-meta" for="e2e-model">
               <span>Strategist deployment</span>
               <select id="e2e-model" v-model="deployment" class="ui-input h-10 w-full">
@@ -114,9 +240,7 @@ function downloadReport(): void {
               <label class="space-y-1 text-meta" for="e2e-starter">
                 <span>Starter</span>
                 <select id="e2e-starter" v-model="starter" class="ui-input h-10 w-full">
-                  <option value="squirtle">Squirtle</option>
-                  <option value="bulbasaur">Bulbasaur</option>
-                  <option value="charmander">Charmander</option>
+                  <option v-for="name in starterOptions" :key="name" :value="name">{{ name[0].toUpperCase() + name.slice(1) }}</option>
                 </select>
               </label>
               <label class="space-y-1 text-meta" for="e2e-seed">
@@ -126,10 +250,11 @@ function downloadReport(): void {
             </div>
           </template>
           <label v-else class="block space-y-1 text-meta" for="e2e-run">
-            <span>Existing Red full-campaign run</span>
+            <span>Existing full-campaign run</span>
             <input id="e2e-run" v-model="existingID" class="ui-input h-10 w-full font-mono" list="e2e-recent-runs" placeholder="run-..." autocomplete="off" />
+            <button type="button" class="ui-btn ui-btn-sm mt-2" :disabled="!/^[-_a-zA-Z0-9]{3,100}$/.test(existingID.trim())" @click="inspectRun(existingID.trim())">Inspect this run · no production actions</button>
             <datalist id="e2e-recent-runs">
-              <option v-for="run in (recent.data.value?.runs || []).filter(r => r.game === 'pokemon-red')" :key="run.run_id" :value="run.run_id">{{ run.goal || 'No goal' }}</option>
+              <option v-for="run in (recent.data.value?.runs || []).filter(isFullCampaignSource)" :key="run.run_id" :value="run.run_id">{{ run.goal || 'No goal' }}</option>
             </datalist>
           </label>
         </fieldset>
@@ -157,15 +282,92 @@ function downloadReport(): void {
           <button v-if="currentID" type="button" class="ui-btn h-10" @click="downloadReport">Export report</button>
         </div>
         <p class="text-meta text-fg-2">
-          You can switch between PokePilot screens while the coordinator runs. Keep this browser page open: closing or reloading it stops further coordination (not already-dispatched server jobs). Reattach using the run ID to resume.
+          Runs and publication candidates remain stored on their respective servers. Browser receipts are saved locally and restored after reload, but closing the page interrupts further production coordination. Use the run list on the right to inspect server status, then resume without upload if necessary.
         </p>
       </div>
     </section>
 
     <div class="min-w-0 space-y-3">
+      <section class="ui-bay" aria-labelledby="e2e-history-title">
+        <div class="ui-bay-header">
+          <h2 id="e2e-history-title">E2E runs and Champion candidates</h2>
+          <button class="ui-btn ui-btn-sm" type="button" @click="recent.retry(); evidence.retry()">Refresh</button>
+        </div>
+        <div class="space-y-3 p-3">
+          <p class="text-meta text-fg-2">
+            Server-tagged runs show <strong>E2E · database</strong> and remain discoverable across browsers or redeployments. Old untagged Champion runs are listed as candidates, never automatically marked E2E. Browser-local receipts are supplementary.
+          </p>
+          <p v-if="recent.error.value" class="text-meta text-warn" role="alert">Farm history unavailable: {{ recent.error.value }}. Saved browser receipts remain accessible.</p>
+          <p v-if="!foundSources.length" class="text-meta text-fg-2">No local E2E receipts or recent Champion runs found. Enter a run ID under Existing run to inspect an older run.</p>
+          <ul v-else class="max-h-72 space-y-1 overflow-y-auto" aria-label="Recent production test sources">
+            <li v-for="row in foundSources" :key="row.id">
+              <button type="button" class="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border border-rule p-2 text-left hover:bg-raised"
+                :class="inspectedID === row.id ? 'bg-selected' : ''" :aria-pressed="inspectedID === row.id" @click="inspectRun(row.id)">
+                <span class="min-w-0 flex-1 truncate font-mono text-meta" :title="row.id">{{ row.id }}</span>
+                <span class="text-meta text-fg-2">{{ row.run?.status || 'Not in recent farm list' }}</span>
+                <span class="text-meta" :class="row.run?.purpose === 'full_e2e' ? 'text-ok font-semibold' : row.saved ? 'text-accent' : 'text-fg-3'">{{ row.run?.purpose === 'full_e2e' ? 'E2E · database' : row.saved ? 'Started here' : 'Champion candidate' }}</span>
+                <span v-if="row.saved" class="text-meta text-fg-2">
+                  {{ historyLabel(fullE2E.history.find(e => e.runID === row.id)) }}
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section v-if="inspectedID" class="ui-bay" aria-labelledby="e2e-server-status">
+        <div class="ui-bay-header">
+          <h2 id="e2e-server-status">Server evidence · <span class="font-mono">{{ inspectedID }}</span></h2>
+          <span class="text-meta text-fg-2">Refreshes every 10s</span>
+        </div>
+        <div class="space-y-3 p-3">
+          <div v-if="evidence.error.value" class="text-sm text-warn" role="alert">Cannot load run: {{ evidence.error.value }}. Try Refresh or open Live.</div>
+          <p v-else-if="!selectedEvidence?.run" class="text-meta text-fg-2">Loading farm and media records…</p>
+          <template v-else>
+            <p class="font-semibold" :class="observed?.tone === 'failed' ? 'text-danger' : observed?.tone === 'ready' ? 'text-ok' : 'text-fg'">
+              {{ observed?.label }}
+            </p>
+            <p class="text-meta text-fg-2">{{ observed?.detail }}</p>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-meta">
+              <dt class="text-fg-3">Farm</dt>
+              <dd>{{ selectedEvidence.run.status }} · {{ selectedEvidence.run.reason || 'no finish reason' }}</dd>
+              <dt class="text-fg-3">Champion</dt>
+              <dd>{{ selectedEvidence.run.stats?.goal_complete ? 'Goal flag recorded' : (selectedEvidence.run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m)) ? 'Hall of Fame milestone' : 'Not verified' }}</dd>
+              <dt class="text-fg-3">Production</dt>
+              <dd>{{ selectedEvidence.production ? selectedEvidence.production.stage.replace(/_/g, ' ') : 'No status' }}<span v-if="selectedEvidence.production?.verdict"> · {{ selectedEvidence.production.verdict }}</span><span v-if="selectedEvidence.production?.error" class="text-warn"> · {{ selectedEvidence.production.error }}</span>
+                <button v-if="selectedEvidence.production?.done && selectedEvidence.production.stage.startsWith('failed_')" type="button" class="ui-btn ui-btn-sm ml-2" :disabled="retryingProduction" @click="retryFailedProduction">Retry production</button>
+                <span v-if="productionRetryError" class="text-warn"> · {{ productionRetryError }}</span></dd>
+              <template v-if="selectedEvidence.production?.upload_private || Object.keys(selectedEvidence.production?.videos || {}).length">
+                <dt class="text-fg-3">Private upload</dt>
+                <dd>
+                  <span v-if="!Object.keys(selectedEvidence.production?.videos || {}).length">Opted in · waiting for candidates</span>
+                  <a v-for="(href, format) in selectedEvidence.production?.videos" :key="format" :href="href.startsWith('http') ? href : 'https://youtu.be/' + href" target="_blank" rel="noopener" class="mr-3 text-accent hover:underline">{{ format }} ↗</a>
+                </dd>
+              </template>
+              <dt class="text-fg-3">Replay</dt>
+              <dd>{{ selectedEvidence.replay?.state || 'No status' }}<span v-if="selectedEvidence.replayError" class="text-warn"> · unavailable</span></dd>
+              <dt class="text-fg-3">Publication</dt>
+              <dd>{{ selectedEvidence.publications?.length ?? 'Unavailable' }} candidates<span v-if="selectedEvidence.publicationsError" class="text-warn"> · API error</span></dd>
+            </dl>
+            <div v-if="selectedEvidence.publications?.length" class="space-y-1 border-t border-rule pt-2">
+              <p v-for="candidate in selectedEvidence.publications" :key="candidate.id" class="text-meta">
+                {{ candidateLabel(candidate) }} · {{ candidate.proposal.privacy }}
+                <a v-if="candidate.provider_url" :href="candidate.provider_url" target="_blank" rel="noopener noreferrer" class="text-accent underline">Open upload</a>
+              </p>
+            </div>
+          </template>
+          <div class="flex flex-wrap gap-2">
+            <a :href="selectedRunLink('live')" class="ui-btn ui-btn-sm">Inspect game</a>
+            <a :href="selectedRunLink('studio')" class="ui-btn ui-btn-sm">Open Studio</a>
+            <a :href="selectedRunLink('library')" class="ui-btn ui-btn-sm">Open Library</a>
+          </div>
+          <p class="text-meta text-fg-3">The replay server produces media for finished E2E runs automatically and resumes after restarts; nothing here needs to stay open.</p>
+        </div>
+      </section>
+
       <section class="ui-bay" aria-labelledby="e2e-progress-title" aria-live="polite">
         <div class="ui-bay-header">
-          <h2 id="e2e-progress-title">End-to-end progress</h2>
+          <h2 id="e2e-progress-title">Browser coordination receipt</h2>
           <span class="text-meta text-fg-2">{{ stageCount }} stages ready</span>
         </div>
         <div class="space-y-3 p-3">
@@ -175,7 +377,9 @@ function downloadReport(): void {
             <a :href="libraryLink" class="ui-btn ui-btn-sm">Open recording</a>
             <a :href="'?run=' + encodeURIComponent(currentID) + '#live'" class="ui-btn ui-btn-sm">Inspect game</a>
           </div>
-          <p v-if="!stages.length" class="py-5 text-center text-fg-2">Choose a source and start a test to see each verified step here.</p>
+          <p v-if="!stages.length" class="py-5 text-center text-fg-2">Select a run above for its server-side status, or start/resume production to record browser stages here.</p>
+          <p v-if="fullE2E.lastStatus === 'interrupted' && !working" class="text-meta text-warn">The previous browser coordinator stopped before it could confirm completion. Server evidence above may still show that the game or media jobs progressed.</p>
+          <p v-if="fullE2E.lastUpdatedAt" class="text-meta text-fg-3">Last saved browser receipt: {{ new Date(fullE2E.lastUpdatedAt).toLocaleString() }}</p>
           <ol v-else class="space-y-2">
             <li v-for="stage in stages" :key="stage.id" class="flex gap-2 border-b border-rule pb-2 last:border-0">
               <span aria-hidden="true" :class="stage.state === 'ready' ? 'text-ok' : stage.state === 'failed' ? 'text-danger' : 'text-accent'">

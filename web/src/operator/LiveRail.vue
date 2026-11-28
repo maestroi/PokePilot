@@ -70,7 +70,10 @@ function onKey(event: KeyboardEvent): void {
               <span v-else class="text-meta text-fg-3">○ Queued</span>
             </span>
             <span class="flex min-w-0 flex-col gap-1">
-              <span class="truncate font-mono text-meta font-medium" :title="run.run_id">{{ run.run_id }}</span>
+              <span class="flex min-w-0 items-center gap-1">
+                <span class="min-w-0 flex-1 truncate font-mono text-meta font-medium" :title="run.run_id">{{ run.run_id }}</span>
+                <span v-if="run.purpose === 'full_e2e'" class="ui-tag shrink-0 border-accent text-accent" title="Database-tagged E2E run">E2E</span>
+              </span>
               <span><StatusPill :status="presentRunStatus(run)" /></span>
               <span class="truncate text-meta text-fg-2">
                 {{ run.status === 'queued' || run.status === 'leased' ? 'Waiting for a worker' : where(run) }}<template v-if="rowTag(run)"> · {{ rowTag(run) }}</template>
@@ -109,7 +112,10 @@ function onKey(event: KeyboardEvent): void {
               />
             </span>
             <span class="flex min-w-0 flex-col gap-1">
-              <span class="truncate font-mono text-meta font-medium" :title="run.run_id">{{ run.run_id }}</span>
+              <span class="flex min-w-0 items-center gap-1">
+                <span class="min-w-0 flex-1 truncate font-mono text-meta font-medium" :title="run.run_id">{{ run.run_id }}</span>
+                <span v-if="run.purpose === 'full_e2e'" class="ui-tag shrink-0 border-accent text-accent" title="Database-tagged E2E run">E2E</span>
+              </span>
               <span><StatusPill :status="presentRunStatus(run)" /></span>
               <span class="truncate text-meta text-fg-2" :title="railFacts(run)">{{ railFacts(run) }}</span>
             </span>

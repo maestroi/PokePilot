@@ -17,7 +17,7 @@ func setRouteTestEvent(mem *state.Mem, event state.Event) {
 func TestRedRouteCapabilitiesProjectEarlyStoryGates(t *testing.T) {
 	mem := new(state.Mem)
 	caps := redRouteCapabilities(nil, mem)
-	if caps.Has(capCanLeaveViridianNorth) || caps.Has(capCanLeavePewterEast) {
+	if caps.Has(capCanLeaveViridianNorth) || caps.Has(capCanLeavePewterEast) || caps.Has(capCanPassRoute22Gate) {
 		t.Fatalf("fresh state unexpectedly passes early route gates: %v", caps)
 	}
 
@@ -26,14 +26,17 @@ func TestRedRouteCapabilitiesProjectEarlyStoryGates(t *testing.T) {
 	if !caps.Has(capCanLeaveViridianNorth) {
 		t.Fatalf("Pokedex story fact did not project %q: %v", capCanLeaveViridianNorth, caps)
 	}
-	if caps.Has(capCanLeavePewterEast) {
-		t.Fatalf("Pokedex alone incorrectly passed Pewter east gate: %v", caps)
+	if caps.Has(capCanLeavePewterEast) || caps.Has(capCanPassRoute22Gate) {
+		t.Fatalf("Pokedex alone incorrectly passed Pewter east / Route 22 Gate: %v", caps)
 	}
 
 	mem[sym.ObtainedBadges] |= 1 << uint8(state.BadgeBoulder)
 	caps = redRouteCapabilities(nil, mem)
 	if !caps.Has(capCanLeavePewterEast) {
 		t.Fatalf("Boulder Badge did not project %q: %v", capCanLeavePewterEast, caps)
+	}
+	if !caps.Has(capCanPassRoute22Gate) {
+		t.Fatalf("Boulder Badge did not project %q: %v", capCanPassRoute22Gate, caps)
 	}
 }
 
@@ -52,6 +55,28 @@ func TestRedRouteTransitionsAttachEarlyProgressionToEdges(t *testing.T) {
 			name: "pewter east",
 			edge: world.Edge{Kind: world.EdgeConnection, From: semanticPewterCityMap, To: semanticRoute3Map},
 			want: capCanLeavePewterEast,
+		},
+		{
+			name: "route 22 gate north",
+			edge: world.Edge{
+				Kind:  world.EdgeWarp,
+				From:  route22GateMap,
+				To:    route23Map,
+				WarpX: route22GateNorthWarpX1,
+				WarpY: route22GateNorthWarpY,
+			},
+			want: capCanPassRoute22Gate,
+		},
+		{
+			name: "route 22 gate north second door",
+			edge: world.Edge{
+				Kind:  world.EdgeWarp,
+				From:  route22GateMap,
+				To:    route23Map,
+				WarpX: route22GateNorthWarpX2,
+				WarpY: route22GateNorthWarpY,
+			},
+			want: capCanPassRoute22Gate,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,10 +98,14 @@ func TestEarlyProgressionGatesDoNotBlockReverseReturn(t *testing.T) {
 	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: semanticRoute2Map, To: semanticViridianCityMap},
 		{Kind: world.EdgeConnection, From: semanticRoute3Map, To: semanticPewterCityMap},
+		{Kind: world.EdgeWarp, From: route23Map, To: route22GateMap, WarpX: 7, WarpY: route23Route22GateWarpY},
+		{Kind: world.EdgeWarp, From: route22GateMap, To: route23Map, WarpX: route22GateNorthWarpX1, WarpY: 7},
 	} {
 		if transition, ok := redRouteTransitionForEdge(edge); ok &&
-			(transition.ID == "red:viridian_north_pokedex" || transition.ID == "red:pewter_east_boulder") {
-			t.Fatalf("reverse edge %+v was incorrectly story-gated: %+v", edge, transition)
+			(transition.ID == "red:viridian_north_pokedex" ||
+				transition.ID == "red:pewter_east_boulder" ||
+				transition.ID == "red:route22_gate_boulder") {
+			t.Fatalf("reverse/south edge %+v was incorrectly story-gated: %+v", edge, transition)
 		}
 	}
 }

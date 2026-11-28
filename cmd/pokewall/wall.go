@@ -760,7 +760,7 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !spec.Purpose.Valid() {
-		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal or debug_coverage"})
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal, debug_coverage or full_e2e"})
 		return
 	}
 	decisionEngine, err := spec.DecisionEngine.Normalized()
@@ -1489,7 +1489,17 @@ func (w *Wall) handleDashboard(res http.ResponseWriter, req *http.Request) {
 		}
 		limit = parsed
 	}
-	writeJSON(res, http.StatusOK, w.snapshotFiltered(status, limit))
+	if ids := strings.TrimSpace(req.Header.Get(archiveRunsHeader)); ids != "" {
+		writeJSON(res, http.StatusOK, w.snapshotRuns(strings.Split(ids, ",")))
+		return
+	}
+	view := w.snapshotFiltered(status, limit)
+	if req.Header.Get(archiveIndexHeader) != "" {
+		for i := range view.Runs {
+			view.Runs[i] = archiveIndexRow(view.Runs[i])
+		}
+	}
+	writeJSON(res, http.StatusOK, view)
 }
 
 var (

@@ -186,6 +186,71 @@ func TestTrainingOfferWithholdsOutsideBudgetLeadTraining(t *testing.T) {
 	}
 }
 
+// TestTrainingOfferWithholdsUnexecutableLeadEvenWhenCombatReadinessOwed pins
+// the Route 22 stagnation: weak grass still awards XP, so an open combat-
+// readiness campaign used to keep offering lead Train, but the next level
+// needs more battles than trainSessionBattleCeiling. The executor then blocks
+// every attempt as training_inefficient_area until the watchdog stops the run.
+func TestTrainingOfferWithholdsUnexecutableLeadEvenWhenCombatReadinessOwed(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "viridian gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	obs := Observation{
+		Map:        0x21,
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "dugtrio", Level: 56, HP: 120, MaxHP: 141}},
+		HasGrass:   true,
+		WildGrass:  []WildSpecies{{Name: "nidoran", MinLevel: 2, MaxLevel: 6, Slots: 10}},
+		Training: &TrainingEstimate{
+			CurrentLevel: 56, TargetLevel: 58, XPRemaining: 12072,
+			XPPerEncounter: 26, EstimatedEncounters: 465,
+			NextLevelXP: 2158, NextLevelEncounters: 83,
+			SessionBudget: trainSessionBattleBudget, Viability: TrainingOutsideBudget,
+			Method: TrainingDirect,
+		},
+	}
+	if trainingSessionExecutable(*obs.Training, nil) {
+		t.Fatal("test setup: lead next-level band must be unexecutable in one session")
+	}
+	if !owesCombatReadiness(known, obs) {
+		t.Fatal("test setup: combat readiness must be owed so the old exception would fire")
+	}
+	for _, offer := range Offer(obs, known) {
+		if offer.Kind == KindTrain && offer.Species == "" {
+			t.Fatalf("unexecutable outside-budget lead train was offered under combat readiness: %+v", offer)
+		}
+	}
+}
+
+func TestTrainSessionBattlesSizesFullTargetWithinCeiling(t *testing.T) {
+	// Oddish L17→19 on Route 22: next level is ~25 encounters, full target ~54.
+	// One stretched session should cover the full rung instead of stopping after
+	// L18 and relying on another offer cycle.
+	est := TrainingEstimate{
+		NextLevelEncounters: 25,
+		EstimatedEncounters: 54,
+		XPPerEncounter:      26,
+	}
+	got := trainSessionBattles(est)
+	if got < est.EstimatedEncounters {
+		t.Fatalf("trainSessionBattles = %d, want >= full target %d", got, est.EstimatedEncounters)
+	}
+	if got > trainSessionBattleCeiling {
+		t.Fatalf("trainSessionBattles = %d, want <= ceiling %d", got, trainSessionBattleCeiling)
+	}
+
+	// A target past the ceiling still caps; executability refuses next-level
+	// bands that cannot fit even after the stretch.
+	huge := TrainingEstimate{NextLevelEncounters: 83, EstimatedEncounters: 465, XPPerEncounter: 26}
+	if got := trainSessionBattles(huge); got != trainSessionBattleCeiling {
+		t.Fatalf("huge target battles = %d, want ceiling %d", got, trainSessionBattleCeiling)
+	}
+	if trainingSessionExecutable(huge, nil) {
+		t.Fatal("next level past ceiling must stay unexecutable")
+	}
+}
+
 func TestTrainingOfferKeepsViableLeadTraining(t *testing.T) {
 	obs := Observation{
 		Map:        0,
@@ -269,7 +334,7 @@ func TestApplyPartyTrainingMethodRejectsUnsafeAreaWithoutCarry(t *testing.T) {
 	}
 }
 
-func TestApplyPartyTrainingMethodKeepsDirectTrainingForManageableWilds(t *testing.T) {
+func TestApplyPartyTrainingMethodKeepsDirectTrainingForWeakerWilds(t *testing.T) {
 	party := state.PartyState{Count: 2, Mons: []state.Mon{
 		{Species: 1, Level: 20, HP: 60, MaxHP: 60, PP: [4]uint8{20}},
 		{Species: 2, Level: 45, HP: 120, MaxHP: 120, PP: [4]uint8{20}},
@@ -280,8 +345,31 @@ func TestApplyPartyTrainingMethodKeepsDirectTrainingForManageableWilds(t *testin
 		SessionBudget: 20, Viability: TrainingViable, Method: TrainingDirect,
 	}
 
-	got := applyPartyTrainingMethod(party, 0, repeatedWildSlots(2, 23), estimate)
+	got := applyPartyTrainingMethod(party, 0, repeatedWildSlots(2, 18), estimate)
 	if got.Method != TrainingDirect || got.XPPerEncounter != 200 || got.EstimatedEncounters != 2 {
-		t.Fatalf("manageable-wild estimate = %+v, want unchanged direct training", got)
+		t.Fatalf("weaker-wild estimate = %+v, want unchanged direct training", got)
+	}
+}
+
+func TestApplyPartyTrainingMethodUsesSwitchTrainingForEqualLevelWilds(t *testing.T) {
+	party := state.PartyState{Count: 2, Mons: []state.Mon{
+		{Species: 1, Level: 21, HP: 50, MaxHP: 50, PP: [4]uint8{15}},
+		{Species: 2, Level: 38, HP: 91, MaxHP: 91, PP: [4]uint8{20}},
+	}}
+	estimate := TrainingEstimate{
+		CurrentLevel: 21, TargetLevel: 23, XPRemaining: 400,
+		XPPerEncounter: 200, EstimatedEncounters: 2,
+		SessionBudget: 20, Viability: TrainingViable, Method: TrainingDirect,
+	}
+
+	got := applyPartyTrainingMethod(party, 0, repeatedWildSlots(0x6b, 21), estimate)
+	if got.Method != TrainingSwitch {
+		t.Fatalf("method = %q, want switch training for equal-level wilds", got.Method)
+	}
+	if got.CarryLevel != 38 || got.WildMaxLevel != 21 || got.MinCarryLevel != 26 {
+		t.Fatalf("switch metadata = %+v, want carry L38, wild max L21, minimum carry L26", got)
+	}
+	if got.XPPerEncounter != 100 || got.EstimatedEncounters != 4 || got.Viability != TrainingViable {
+		t.Fatalf("switch XP estimate = %+v, want half-rate viable estimate", got)
 	}
 }

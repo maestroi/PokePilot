@@ -23,6 +23,8 @@ const (
 	SchemaVersion = 1
 	PolicyVersion = 1
 	PromptVersion = "evidence-story-v1"
+	// rulesIdentity names the offline producer. rules-v1 assessments stay valid.
+	rulesIdentity = "rules-v2"
 	maxModelBytes = 64 << 10
 )
 
@@ -109,6 +111,8 @@ type EventFact struct {
 	Type      string `json:"type"`
 	Summary   string `json:"summary,omitempty"`
 	Objective string `json:"objective,omitempty"`
+	Result    string `json:"result,omitempty"` // won or lost, battle events only
+	Badge     string `json:"badge,omitempty"`
 }
 
 type EvidencePack struct {
@@ -205,6 +209,7 @@ func evidence(in Input) (EvidencePack, string, error) {
 			pack.Events = append(pack.Events, EventFact{
 				EvidenceRef: EvidenceRef{Attempt: t.Attempt, EventID: event.ID, Frame: event.Frame, TimestampMS: event.TimestampMS},
 				Type:        strings.TrimSpace(event.Type), Summary: compact(event.Summary, 280), Objective: compact(event.Objective, 160),
+				Result: compact(event.Metadata["result"], 16), Badge: compact(event.Metadata["badge"], 40),
 			})
 		}
 	}
@@ -486,45 +491,125 @@ func publicationCap(pack EvidencePack, score Scores, policy Policy) (Publication
 	return ShortOnly, "Evidence supports a clip, but not a full episode"
 }
 
+// rulesCandidate is the offline producer. It tells the run's arc from generic
+// timeline signals only: the finish, every lost major battle and the rematch
+// that answered it, the final battle, and every badge with the battle that
+// earned it. Captions are written for viewers, never raw planner text.
+// ponytail: tiered heuristic; a configured model producer writes richer stories.
 func rulesCandidate(pack EvidencePack, cap PublicationClass) Candidate {
 	c := Candidate{Publication: cap}
 	if cap == DoNotPublish || len(pack.Events) == 0 {
 		return c
 	}
-	var selected []EventFact
-	seen := make(map[string]bool)
-	for _, e := range pack.Events {
-		switch e.Type {
-		case "run_finished", "run_failed", "badge_acquired", "gym_battle", "boss_battle",
-			"blackout", "rare_catch", "important_catch", "evolution", "planner_recovery",
-			"failure_recovered", "failure_terminal", "milestone":
-		default:
-			continue
+	type pick struct {
+		at, tier int
+		kind     string
+		summary  string
+		refs     []EvidenceRef
+	}
+	var picks []pick
+	add := func(at, tier int, summary string, refs ...EvidenceRef) {
+		e := pack.Events[at]
+		if len(refs) == 0 {
+			refs = []EvidenceRef{e.EvidenceRef}
 		}
-		if !seen[e.Type] {
-			selected = append(selected, e)
-			seen[e.Type] = true
+		picks = append(picks, pick{at, tier, e.Type, summary, refs})
+	}
+	major := func(e EventFact) bool { return e.Type == "boss_battle" || e.Type == "gym_battle" }
+	defeats := make(map[string]int) // attempt/objective -> unanswered defeats
+	picked := make(map[int]bool)
+	lastBattle, finale, badges, overcome := -1, -1, 0, 0
+	for i, e := range pack.Events {
+		key := fmt.Sprintf("%d/%s", e.Attempt, e.Objective)
+		switch {
+		case major(e) && e.Result == "lost":
+			defeats[key]++
+			add(i, 1, "Defeated: this battle will have to be fought again")
+			picked[i] = true
+		case major(e) && e.Result == "won" && e.Objective != "" && defeats[key] > 0:
+			add(i, 1, fmt.Sprintf("Rematch won after %d defeat%s", defeats[key], plural(defeats[key])))
+			picked[i] = true
+			overcome += defeats[key]
+			defeats[key] = 0
+		case e.Type == "badge_acquired":
+			badges++
+			summary := "Badge earned"
+			if e.Badge != "" {
+				summary = "Badge earned: " + e.Badge
+			}
+			// Show the fight that earned the badge, not just the dialogue after it.
+			if b := lastBattle; b >= 0 && pack.Events[b].Attempt == e.Attempt && pack.Events[b].Result != "lost" &&
+				e.TimestampMS-pack.Events[b].TimestampMS <= 60000 {
+				add(i, 2, summary, pack.Events[b].EvidenceRef, e.EvidenceRef)
+			} else {
+				add(i, 2, summary)
+			}
+		case e.Type == "run_finished":
+			summary := "Run complete"
+			if pack.Goal != "" {
+				summary = "Goal complete: " + compact(pack.Goal, 240)
+			}
+			add(i, 0, summary)
+		case e.Type == "run_failed" || e.Type == "failure_terminal":
+			add(i, 0, "The run ends here")
+		case e.Type == "blackout":
+			add(i, 2, "Blackout: the whole party is down")
+		case e.Type == "rare_catch" || e.Type == "important_catch" || e.Type == "evolution":
+			summary := map[string]string{"rare_catch": "Rare catch", "important_catch": "Important catch", "evolution": "Evolution"}[e.Type]
+			if e.Summary != "" {
+				summary += ": " + compact(e.Summary, 200)
+			}
+			add(i, 3, summary)
+		case e.Type == "milestone":
+			add(i, 4, "Milestone reached")
+		case e.Type == "gym_battle":
+			add(i, 4, "Gym battle")
+		case e.Type == "planner_recovery" || e.Type == "failure_recovered":
+			add(i, 5, "The pilot recovers from a setback")
 		}
-		if len(selected) == 8 {
-			break
+		if major(e) {
+			lastBattle = i
+			if e.Result != "lost" {
+				finale = i
+			}
 		}
 	}
-	for _, e := range selected {
-		summary := e.Summary
-		if summary == "" {
-			summary = strings.ReplaceAll(e.Type, "_", " ")
-		}
-		c.Beats = append(c.Beats, Beat{Kind: e.Type, Summary: summary, Evidence: []EvidenceRef{e.EvidenceRef}})
+	if finale >= 0 && !picked[finale] {
+		add(finale, 1, "Final battle won")
+	}
+	sort.SliceStable(picks, func(i, j int) bool { return picks[i].tier < picks[j].tier })
+	if len(picks) > 16 {
+		picks = picks[:16]
+	}
+	sort.SliceStable(picks, func(i, j int) bool { return picks[i].at < picks[j].at })
+	for _, p := range picks {
+		c.Beats = append(c.Beats, Beat{Kind: p.kind, Summary: p.summary, Evidence: p.refs})
 	}
 	if len(c.Beats) == 0 {
 		return c
 	}
-	if pack.Goal != "" {
-		c.PrimaryStory = "Run goal: " + compact(pack.Goal, 240) + "; observed: " + compact(c.Beats[0].Summary, 240)
-	} else {
-		c.PrimaryStory = "Observed run event: " + compact(c.Beats[0].Summary, 240)
+	if c.Publication == FullEpisode && len(c.Beats) < 2 {
+		c.Publication = ShortOnly
 	}
+	story := "Goal: " + strings.TrimRight(compact(pack.Goal, 240), ".!")
+	if pack.Goal == "" {
+		story = "An autonomous run"
+	}
+	if badges > 0 {
+		story += fmt.Sprintf(". %d badge%s earned", badges, plural(badges))
+	}
+	if overcome > 0 {
+		story += fmt.Sprintf(", %d defeat%s overcome", overcome, plural(overcome))
+	}
+	c.PrimaryStory = story + "."
 	return c
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // Assess validates every selected model beat against exact durable event IDs,
@@ -542,7 +627,7 @@ func Assess(ctx context.Context, in Input, model Model, policy Policy) (Assessme
 	}
 	s := scores(pack)
 	cap, reason := publicationCap(pack, s, policy)
-	identity := "rules-v1"
+	identity := rulesIdentity
 	promptVersion := "none"
 	var candidate Candidate
 	if model != nil && len(pack.Events) > 0 {
@@ -624,10 +709,11 @@ func Validate(out Assessment, in Input) error {
 	if rank(out.Publication) > rank(cap) {
 		return errors.New("producer: unsafe publication class")
 	}
-	if out.Model == "rules-v1" && out.PromptVersion != "none" {
+	rules := out.Model == "rules-v1" || out.Model == rulesIdentity
+	if rules && out.PromptVersion != "none" {
 		return errors.New("producer: rules identity mismatch")
 	}
-	if out.Model != "rules-v1" && out.PromptVersion != PromptVersion {
+	if !rules && out.PromptVersion != PromptVersion {
 		return errors.New("producer: prompt identity mismatch")
 	}
 	return VerifyChecksum(out)

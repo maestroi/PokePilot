@@ -75,7 +75,13 @@ const (
 	ObjectStructs    uint16 = 0xD1FD // wObjectStructs
 	ObjectStructLen         = 0x28
 	NumObjectStructs        = 13
-	PlayerState      uint16 = 0xD682 // wPlayerState
+	// wMapObjects: every object of the current map, loaded on screen or
+	// not; wObjectMasks marks hidden ones (nonzero).
+	MapObjects    uint16 = 0xD445 // wMapObjects
+	MapObjectLen         = 0x10
+	NumMapObjects        = 16
+	ObjectMasks   uint16 = 0xD545 // wObjectMasks
+	PlayerState   uint16 = 0xD682 // wPlayerState
 
 	// Early Johto story state.
 	TimeOfDayPalset        uint16 = 0xD56E // wTimeOfDayPalset
@@ -103,6 +109,12 @@ const (
 	CurDay          uint16 = 0xD1F2 // wCurDay
 	GameTimerPaused uint16 = 0xD8B8 // wGameTimerPaused
 	BikeFlags       uint16 = 0xD93F // wBikeFlags
+
+	// VisitedSpawns is wVisitedSpawns, the first wCurMapData label: one bit
+	// per SPAWN_* in constants/map_data_constants.asm (the ENGINE_FLYPOINT_*
+	// flags). Measured on a retail Gold post-Rising save, where the visited
+	// Johto towns read 00 c0 fd 03.
+	VisitedSpawns uint16 = 0xD9EE // wVisitedSpawns
 
 	// BackupMapGroup is wBackupMapGroup. Special maps (landmark 0) report the
 	// region of this return map. Counted back from the verified wMapGroup
@@ -202,21 +214,23 @@ const (
 	PlayerScreens           uint16 = 0xCBDD
 	PlayerScreensReflectBit        = 4
 
-	Money         uint16 = 0xD573
-	JohtoBadges   uint16 = 0xD57C
-	KantoBadges   uint16 = 0xD57D
-	TMsHMs        uint16 = 0xD57E
-	TMsHMsCount          = 57
-	NumItems      uint16 = 0xD5B7
-	Items         uint16 = 0xD5B8
-	MaxItems             = 20
-	NumKeyItems   uint16 = 0xD5E1
-	KeyItems      uint16 = 0xD5E2
-	MaxKeyItems          = 25
-	NumBalls      uint16 = 0xD5FC
-	Balls         uint16 = 0xD5FD
-	MaxBalls             = 12
-	PokegearFlags uint16 = 0xD67C // wPokegearFlags
+	Money           uint16 = 0xD573
+	JohtoBadges     uint16 = 0xD57C
+	KantoBadges     uint16 = 0xD57D
+	TMsHMs          uint16 = 0xD57E
+	TMsHMsCount            = 57
+	NumItems        uint16 = 0xD5B7
+	Items           uint16 = 0xD5B8
+	MaxItems               = 20
+	NumKeyItems     uint16 = 0xD5E1
+	KeyItems        uint16 = 0xD5E2
+	MaxKeyItems            = 25
+	NumBalls        uint16 = 0xD5FC
+	Balls           uint16 = 0xD5FD
+	MaxBalls               = 12
+	NumPCItems      uint16 = 0xD616 // wNumPCItems, after wBalls (MAX_BALLS*2+1)
+	PokegearFlags   uint16 = 0xD67C // wPokegearFlags
+	RadioTuningKnob uint16 = 0xD67D // wRadioTuningKnob, immediately after wPokegearFlags
 	// wPhoneList lives 40 bytes before wCurMapData (0xD9EE): 10 contact
 	// slots plus an extra terminator, followed by the fixed player-data tail.
 	PhoneList     uint16 = 0xD9C6 // wPhoneList

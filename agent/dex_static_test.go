@@ -119,3 +119,16 @@ func TestAppendDexStaticObjectivesHidesNoRouteSiteUntilRouteStateChanges(t *test
 		t.Fatalf("Mewtwo stayed hidden after story progress: %+v", got)
 	}
 }
+
+// run-d6dokr184ky81 offered Mewtwo before the Hall of Fame and retried it on
+// "no route" for days; the cave guard is a postgame gate.
+func TestAppendDexStaticObjectivesHidesMewtwoUntilHallOfFame(t *testing.T) {
+	obs := staticDexObservation("mewtwo", 0x03, "")
+	if got := appendDexStaticObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
+		t.Fatalf("pre-Hall-of-Fame Mewtwo offered: %+v", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
+	if got := appendDexStaticObjectives(obs, NewKnowledge(nil), nil); len(got) != 1 || got[0].Species != "mewtwo" {
+		t.Fatalf("postgame Mewtwo = %+v, want one static objective", got)
+	}
+}

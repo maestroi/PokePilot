@@ -96,6 +96,11 @@ function liveHref(id: string): string {
         <p class="pt-3 text-fg-2">
           {{ gameTitle(run.game) }} · {{ plannerLabel(run) }}<template v-if="starter"> · {{ starter.species }}</template>
         </p>
+        <a v-if="run.purpose === 'full_e2e'"
+          :href="operatorHref('media', { section: 'e2e', run: run.run_id })"
+          class="ui-tag mt-2 inline-flex border-accent text-accent"
+          title="Tagged as Full E2E in the database; check pipeline evidence in Media"
+        >E2E · Open production status</a>
         <p v-if="run.status !== 'done'" class="mt-3 border border-warn/40 bg-warn/10 px-3 py-2 text-warn" role="status">
           ▲ This run is still active. Inspect it in Live for current state; Runs only keeps finished history.
         </p>

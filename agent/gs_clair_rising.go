@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
-	"github.com/maestroi/pokepilot/gs/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -112,10 +111,10 @@ func executeGSClair(m *emu.Emu, romData []byte) error {
 // even taking it is not sufficient: only ENGINE_RISINGBADGE in wJohtoBadges
 // confirms that all eight badges have actually been earned.
 //
-// The inventory has a hard 20-slot ordinary-item pocket. A full pocket can
-// make retail giveitem DRAGON_FANG fail before Clair appears; we fail with a
-// specific restartable diagnosis rather than repeating the script forever,
-// editing RAM, or claiming badge success.
+// The inventory has a hard 20-slot ordinary-item pocket. A full pocket makes
+// retail giveitem DRAGON_FANG fail before Clair appears, so one non-medicine
+// stack is first stored in the Blackthorn Center's player PC (reversible; no
+// toss, sale or RAM edit).
 func executeGSDragonFangRising(m *emu.Emu, romData []byte) error {
 	const label = "dragons-den:dragon-fang-rising"
 	profile, done, err := gsCoastalProfile(m, romData,
@@ -132,12 +131,6 @@ func executeGSDragonFangRising(m *emu.Emu, romData []byte) error {
 			return nil
 		}
 	}
-	// Do not force another item interaction when the ordinary bag is full.
-	// Dragon Fang lives in the Items pocket, not the independent key pocket.
-	if int(m.Peek8(sym.NumItems)) >= sym.MaxItems {
-		return fmt.Errorf("%w: Dragon Fang cannot be received with a full %d-slot Items pocket; free a slot and resume this checkpoint",
-			errGSSecondBadgeUnexpectedState, sym.MaxItems)
-	}
 	if _, err := skill.EnsureFieldMove(m, skill.FieldSurf); err != nil {
 		return fmt.Errorf("gen2 Dragon's Den: prepare Surf: %w", err)
 	}
@@ -146,6 +139,10 @@ func executeGSDragonFangRising(m *emu.Emu, romData []byte) error {
 	}
 	if err := gsCoastalHeal(m, romData, profile, "BLACKTHORN_POKECENTER_1F"); err != nil {
 		return fmt.Errorf("gen2 Dragon's Den: heal before Surf/Whirlpool: %w", err)
+	}
+	// Dragon Fang lives in the Items pocket, not the independent key pocket.
+	if err := gsEnsureItemsSlot(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Dragon's Den: make room for Dragon Fang: %w", err)
 	}
 	for attempt := 0; attempt < gsClairStoryAttempts; attempt++ {
 		if err := gsRadioScriptInteraction(m, romData, profile,

@@ -361,10 +361,19 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			}
 			return result, nil
 		}
+		if err := skill.EnsureBagSpaceFor(m, item); err != nil {
+			return result, fmt.Errorf("agent: %s: make bag room: %w", o, err)
+		}
 		if err := prepareRedMartPurchase(m, romData); err != nil {
 			return result, fmt.Errorf("agent: %s: prepare mart purchase: %w", o, err)
 		}
 		if err := skill.Buy(m, item, o.Qty); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+
+	case KindEarnMoney:
+		if err := skill.LeagueRematch(m, romData, skill.StatAwareMove(romData)); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil

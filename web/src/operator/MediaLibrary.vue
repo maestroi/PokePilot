@@ -384,6 +384,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
                 <td class="px-3">
                   <div class="flex min-w-0 items-center gap-1">
                     <span class="truncate font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</span>
+                    <span v-if="run.purpose === 'full_e2e'" class="ui-tag shrink-0 border-accent text-accent" title="Database-backed E2E run">E2E</span>
                     <button
                       type="button"
                       class="ui-btn ui-btn-sm ui-icon-btn size-6 shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
@@ -431,6 +432,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
                   <span class="ml-auto shrink-0 text-meta text-fg-2">{{ isPublic(run) ? 'Public' : 'Private' }}</span>
                 </div>
                 <button type="button" class="mt-1 block w-full truncate text-left font-mono text-accent" :title="run.run_id" @click="openRun(run.run_id)">{{ middleTruncate(run.run_id) }}</button>
+                <span v-if="run.purpose === 'full_e2e'" class="ui-tag mt-1 inline-flex border-accent text-accent" title="Database-backed E2E run">E2E</span>
                 <div class="mt-1 truncate text-meta text-fg-2">{{ run.game ? gameTitle(run.game) : 'Game' }} · {{ run.goal || 'Free play' }}</div>
               </div>
               <ActionMenu class="shrink-0" :label="`More actions for ${run.run_id}`" :items="menu(run)" />

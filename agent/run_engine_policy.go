@@ -251,18 +251,28 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// landing the requested species; a finite static exhaustion means all
 	// rollback-safe RNG phases were attempted without consuming the one-time
 	// encounter; a missed catch means the wanted target was met and balls were
-	// thrown but the catch roll never held. None is evidence that recovery itself is broken, so
+	// thrown but the catch roll never held. A training retreat that raised the
+	// trainee's level is the same productive class: Train stopped on the HP
+	// safety line after real XP, so heal-resume / the next rung must not look
+	// like idle time to the dead-position or stagnation watchdogs
+	// (triage 1af47200ea5927d6: mansion B1F lead grind ended StopStuck while
+	// climbing one level per retreat). None is evidence that recovery itself is broken, so
 	// neither may consume the fatal consecutive-failure budget or look like idle
 	// time to the liveness watchdogs. Same-state quarantine still suppresses the
 	// exact objective when alternatives exist; explicit round/frame budgets
 	// remain the ceiling for deliberately persistent stochastic goals.
-	if trainProgress || huntMiss {
+	gainedOnRetreat := retreated && trainingRetreatGainedLevels(result)
+	if trainProgress || huntMiss || gainedOnRetreat {
 		f.consecutive = 0
 		f.lastFailKey = ""
 		f.retreatStreak, f.lastRetreatLevel = 0, 0
 		decision := runFailureDecision{Recovered: true, ProductiveSession: true}
 		if strategic {
-			decision.ReplanReason = "objective_failed"
+			if gainedOnRetreat {
+				decision.ReplanReason = "train_retreat"
+			} else {
+				decision.ReplanReason = "objective_failed"
+			}
 		}
 		return decision
 	}
@@ -372,7 +382,12 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		} else if retreated {
 			reason = "train_retreat"
 		}
-		return runFailureDecision{ReplanReason: reason, Recovered: true}
+		// A zero-level train retreat still fought wilds and stopped on the
+		// safety line. Refresh liveness so three same-tile retreats cannot
+		// trip the dead-position watchdog before retreatStreak / consecutive
+		// budgets own the loop; round and frame ceilings remain the outer
+		// bound.
+		return runFailureDecision{ReplanReason: reason, Recovered: true, ProductiveSession: retreated}
 	}
 
 	if blackedOut || retreated {
@@ -388,7 +403,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		if retreated && f.retreatStreak >= f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
-		return runFailureDecision{Recovered: true}
+		return runFailureDecision{Recovered: true, ProductiveSession: retreated}
 	}
 
 	f.retreatStreak, f.lastRetreatLevel = 0, 0
@@ -398,6 +413,14 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	}
 	f.lastFailKey = failureKey
 	return runFailureDecision{Recovered: true}
+}
+
+// trainingRetreatGainedLevels reports whether a train_retreat session still
+// advanced the trainee. Train prefers ErrTrainRetreat over ErrTrainProgress when
+// the HP safety line fires, so level gain is carried on TrainingEvidence rather
+// than the failure cause string.
+func trainingRetreatGainedLevels(result ObjectiveResult) bool {
+	return result.Train != nil && result.Train.EndLevel > result.Train.StartLevel
 }
 
 // success clears streak-local failure state. escalated intentionally survives:

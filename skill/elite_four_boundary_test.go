@@ -17,12 +17,12 @@ func TestLeagueMemberBoundaryRejectsTransientControlWhileRoomScriptOwnsExecution
 	if !state.Controllable(&mem) {
 		t.Fatal("regression setup must expose the transient controllable frame")
 	}
-	if leagueMemberBoundaryReady(&mem, sym.LoreleisRoomCurScript, done) {
+	if leagueMemberBoundaryReady(nil, &mem, sym.LoreleisRoomCurScript, done) {
 		t.Fatal("League boundary accepted control while Lorelei's end-battle script was still active")
 	}
 
 	mem[sym.LoreleisRoomCurScript] = 0
-	if !leagueMemberBoundaryReady(&mem, sym.LoreleisRoomCurScript, done) {
+	if !leagueMemberBoundaryReady(nil, &mem, sym.LoreleisRoomCurScript, done) {
 		t.Fatal("League boundary did not accept the default room script on a controllable completed state")
 	}
 }

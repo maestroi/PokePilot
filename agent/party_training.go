@@ -4,10 +4,23 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
+
+// trainHealResumeSegments bounds how many Center heal trips one Train
+// objective may take after a retreat. Oddish grinding weak Route 22 grass
+// (triage 0bba5e027eaeb5c0) needs at least one heal to finish L17→19 without
+// leaving a productive shortfall for the planner to re-select.
+const trainHealResumeSegments = 3
+
+// trainHealTravelBattles is the battle allowance for the Center commute and
+// return-to-grass legs. It is separate from the grind session budget so a
+// heal-resume cannot steal the encounters needed to finish the level target.
+const trainHealTravelBattles = 40
 
 type partyTrainingEstimator func(slot, targetLevel int) (TrainingEstimate, error)
 
@@ -118,7 +131,86 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 	if err != nil {
 		return TrainingEstimate{}, err
 	}
-	return applyPartyTrainingMethod(party, slot, slots, estimate), nil
+	estimate = applyPartyTrainingMethod(party, slot, slots, estimate)
+	// Direct training holds the trainee in every wild fight and flees what it
+	// cannot damage, so immune wilds cost an encounter but award no XP. A
+	// Lick-only Gastly fled Route 3's all-Normal band (triage:48e41d4e4c318585)
+	// and then Route 2's mostly-Normal band, where the full-band rate promised
+	// a level the session could not deliver (triage:53211caf400f4793).
+	if estimate.Method == TrainingDirect && estimate.Viability != TrainingSatisfied {
+		if xpPerEncounter, ok := trainingDamageableXPPerEncounter(romData, mon, slots); ok && xpPerEncounter < estimate.XPPerEncounter {
+			estimate.XPPerEncounter = xpPerEncounter
+			if xpPerEncounter == 0 {
+				estimate.EstimatedEncounters = 0
+				estimate.NextLevelEncounters = 0
+				estimate.Viability = TrainingOutsideBudget
+			} else {
+				ceil := func(xp uint32) int { return int((xp + xpPerEncounter - 1) / xpPerEncounter) }
+				estimate.EstimatedEncounters = ceil(estimate.XPRemaining)
+				if estimate.NextLevelXP > 0 {
+					estimate.NextLevelEncounters = ceil(estimate.NextLevelXP)
+				}
+				estimate.Viability = trainingViability(estimate.EstimatedEncounters, estimate.SessionBudget)
+			}
+		}
+	}
+	return estimate, nil
+}
+
+// trainingDamageableXPPerEncounter is the expected XP per wild encounter
+// when mon, held as the training lead, earns nothing from slots it cannot
+// damage. Wild stats use the Gen 1 formula without DVs/stat experience; only
+// the move/type verdict is read, so the approximation cannot flip an
+// immunity. ok is false when habitat data is unknown: keep the full estimate.
+func trainingDamageableXPPerEncounter(romData []byte, mon state.Mon, slots []skill.WildEncounterSlot) (uint32, bool) {
+	b := game.BattleState{
+		ActiveLevel: mon.Level, ActiveHP: mon.HP, ActiveMaxHP: mon.MaxHP,
+		ActiveAttack: mon.Attack, ActiveDefense: mon.Defense, ActiveSpeed: mon.Speed,
+		ActiveSpecial: mon.Special, ActiveSpecialAttack: mon.Special, ActiveSpecialDefense: mon.Special,
+		ActiveType1: mon.Type1, ActiveType2: mon.Type2,
+	}
+	for i, id := range mon.Moves {
+		b.Moves[i] = game.BattleMove{ID: id, PP: mon.PP[i]}
+	}
+	// Same slot weighting as estimateTraining: ROM probabilities when every
+	// slot carries one, equal slots otherwise.
+	equal := false
+	for _, slot := range slots {
+		equal = equal || slot.Chance == 0
+	}
+	var xpMass, weightTotal uint64
+	for _, slot := range slots {
+		if slot.ID == 0 || slot.Level == 0 {
+			continue
+		}
+		weight := uint64(slot.Chance)
+		if equal {
+			weight = 1
+		}
+		weightTotal += weight
+		wild, err := rom.LookupSpeciesBaseStats(romData, slot.ID)
+		if err != nil {
+			return 0, false
+		}
+		stat := func(base uint8) uint16 { return uint16(int(base)*2*int(slot.Level)/100 + 5) }
+		hp := uint16(int(wild.HP)*2*int(slot.Level)/100 + int(slot.Level) + 10)
+		b.EnemyLevel, b.EnemyHP, b.EnemyMaxHP = slot.Level, hp, hp
+		b.EnemyAttack, b.EnemyDefense, b.EnemySpeed = stat(wild.Attack), stat(wild.Defense), stat(wild.Speed)
+		b.EnemySpecial, b.EnemySpecialAttack, b.EnemySpecialDefense = stat(wild.Special), stat(wild.Special), stat(wild.Special)
+		b.EnemyType1, b.EnemyType2 = wild.Type1, wild.Type2
+		if !skill.TrainingLeadCanDamage(romData, b) {
+			continue
+		}
+		wildXP, err := rom.LookupSpeciesExperience(romData, slot.ID)
+		if err != nil {
+			return 0, false
+		}
+		xpMass += uint64(rom.WildBattleExperience(wildXP.BaseYield, slot.Level)) * weight
+	}
+	if weightTotal == 0 {
+		return 0, false
+	}
+	return uint32(xpMass / weightTotal), true
 }
 
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
@@ -209,11 +301,34 @@ func trainingSessionExecutable(estimate TrainingEstimate, estimateErr error) boo
 	return estimate.NextLevelEncounters <= trainSessionBattles(estimate)
 }
 
+// leadTrainingSessionOfferable reports whether the default lead Train choice
+// should appear in the menu. Combat-readiness may keep an expensive habitat on
+// the table, but never an unexecutable OutsideBudget band: the executor would
+// refuse every attempt and the run would stagnate on the same typed block.
+func leadTrainingSessionOfferable(obs Observation, known *Knowledge) bool {
+	if obs.Training == nil {
+		return true
+	}
+	if !trainingSessionExecutable(*obs.Training, nil) {
+		return false
+	}
+	if !trainingUnviableHere(obs) {
+		return true
+	}
+	return trainingYieldsXP(obs) && owesCombatReadiness(known, obs)
+}
+
 // executeTrainingObjective temporarily promotes the requested party member to
 // slot 0 because Red only awards battle XP to participating slots. A clean or
 // progress-making session swaps the original lead back afterward. Retreats and
 // blackouts deliberately keep the trained member active: Run's established
 // recovery bookkeeping reads the active mon's ending level before replanning.
+//
+// When a session retreats short of the target, the objective owns a bounded
+// heal-resume: travel to the nearest Pokemon Center, heal, return to the grind
+// tile, and continue with the remaining battle budget. Leaving that commute to
+// a later planner round is how productive shortfalls stagnated
+// (triage 0bba5e027eaeb5c0: Oddish reached L18 then retreated on Route 22).
 func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -247,7 +362,52 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 	if estimateErr == nil {
 		battles = trainSessionBattles(estimate)
 	}
-	train, trainErr := skill.TrainWithOptions(m, romData, int(o.Level), skill.StatAwareMove(romData), battles, trainOptions)
+	policy := skill.StatAwareMove(romData)
+	grindReturn := skill.Destination{Map: m.Peek8(sym.CurMap), X: m.Peek8(sym.XCoord), Y: m.Peek8(sym.YCoord)}
+
+	var (
+		train    skill.TrainResult
+		trainErr error
+		spent    int
+	)
+	for segment := 0; segment < trainHealResumeSegments; segment++ {
+		remaining := battles - spent
+		if remaining <= 0 {
+			break
+		}
+		seg, segErr := skill.TrainWithOptions(m, romData, int(o.Level), policy, remaining, trainOptions)
+		if segment == 0 {
+			train = seg
+		} else {
+			train.Battles += seg.Battles
+			train.Fled += seg.Fled
+			train.EndLevel = seg.EndLevel
+			train.Reached = seg.Reached
+			train.Retreated = seg.Retreated
+			train.BlackedOut = train.BlackedOut || seg.BlackedOut
+			train.Mode = seg.Mode
+		}
+		spent += seg.Battles + seg.Fled
+		trainErr = segErr
+		if segErr != nil || seg.Reached || seg.BlackedOut || !seg.Retreated {
+			break
+		}
+		// Retreat with budget left: heal at the nearest Center and resume on
+		// the same grass. Failure to heal/return keeps the retreat outcome so
+		// Run's ordinary train_retreat recovery still applies.
+		if _, _, healTravelErr := skill.ReachNearestPokemonCenter(m, romData, policy, trainHealTravelBattles); healTravelErr != nil {
+			break
+		}
+		if healErr := skill.Heal(m); healErr != nil {
+			trainErr = fmt.Errorf("heal after training retreat: %w", healErr)
+			break
+		}
+		if _, returnErr := skill.Travel(m, romData, grindReturn, policy, trainHealTravelBattles); returnErr != nil {
+			trainErr = fmt.Errorf("return to training grass after heal: %w", returnErr)
+			break
+		}
+		grindReturn = skill.Destination{Map: m.Peek8(sym.CurMap), X: m.Peek8(sym.XCoord), Y: m.Peek8(sym.YCoord)}
+	}
 	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the

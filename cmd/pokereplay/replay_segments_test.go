@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -167,5 +169,40 @@ func TestConcatReplaySegmentURLsStreamsRemoteInputs(t *testing.T) {
 	}
 	if err := probeReplayVideo(context.Background(), destination, time.Second); err != nil {
 		t.Fatalf("joined replay invalid: %v", err)
+	}
+}
+
+func TestRenderAttemptsConcurrentlyOverlapsAttemptsAndSerializesProgress(t *testing.T) {
+	attempts := []preparedReplayAttempt{
+		{Recording: replayRecording{Attempt: 1}},
+		{Recording: replayRecording{Attempt: 2}},
+		{Recording: replayRecording{Attempt: 3}},
+	}
+	// Each render waits until every attempt has started, so a sequential
+	// implementation never gets past the first attempt.
+	var started sync.WaitGroup
+	started.Add(len(attempts))
+	done := 0
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := renderAttemptsConcurrently(ctx, attempts, nil, func() { done++ }, func(ctx context.Context, attempt *preparedReplayAttempt, _ func(replayVideoSegment), onReady func()) error {
+		started.Done()
+		waited := make(chan struct{})
+		go func() { started.Wait(); close(waited) }()
+		select {
+		case <-waited:
+		case <-ctx.Done():
+			return fmt.Errorf("attempt %d never overlapped: %w", attempt.Recording.Attempt, ctx.Err())
+		}
+		for range 100 {
+			onReady()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done != 300 {
+		t.Fatalf("progress callbacks lost updates: done=%d, want 300", done)
 	}
 }

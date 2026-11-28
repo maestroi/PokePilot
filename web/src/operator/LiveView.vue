@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, replayVideoURL, resumeProgramming, resumeRun } from '../shared/api/client'
-import type { DashboardRun, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
+import type { DashboardRun, DashboardSnapshot, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
 import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
@@ -11,7 +11,7 @@ import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
-import { usePollingResource } from '../shared/composables/usePollingResource'
+import { usePollingResource, type PollingResource } from '../shared/composables/usePollingResource'
 import { presentReplay, presentRunStatus } from '../shared/status'
 import { operatorHref, replayURL, spectatorURL } from '../shared/urls'
 import SemanticMap from './SemanticMap.vue'
@@ -38,6 +38,7 @@ type RendererMode = 'modern' | 'classic'
 
 const props = defineProps<{
   publicBase?: string
+  activeResource: PollingResource<DashboardSnapshot>
 }>()
 
 // ── Selection ──────────────────────────────────────────────────────────────
@@ -84,7 +85,9 @@ function backToFailure(): void {
 const railOpen = ref(false)
 let detailSerial = 0
 
-const activeResource = usePollingResource((signal) => getDashboard({ active: true }, signal), { intervalMs: 2000 })
+// The shell already owns this feed for its status summary; sharing avoids a
+// second /v1/dashboard request on every live refresh.
+const activeResource = props.activeResource
 const recentResource = usePollingResource((signal) => getDashboard({ status: 'done', limit: 12 }, signal), { intervalMs: 10000 })
 const spectatorResource = usePollingResource((signal) => getSpectatorControl(signal), { intervalMs: 5000 })
 const programmingResource = usePollingResource((signal) => getProgramming(signal), { intervalMs: 2000 })
@@ -537,6 +540,11 @@ const search = () => window.location.search
             </button>
           </span>
           <StatusPill v-if="status" :status="status" />
+          <a v-if="selectedRun.purpose === 'full_e2e'"
+            :href="operatorHref('media', { section: 'e2e', run: selectedRun.run_id }, search())"
+            class="ui-tag border-accent text-accent hover:bg-selected"
+            title="This run is tagged E2E in the database. Open its production status."
+          >E2E</a>
           <span class="ui-tag">{{ gameTitle(selectedRun.game) }}</span>
           <span class="ui-tag">{{ selectedRun.planner === 'llm' ? 'LLM' : 'Scripted' }}</span>
           <span v-if="isPlayStyleRun(selectedRun)" class="ui-tag">{{ playStyleLabel(selectedRun) }}</span>

@@ -1,12 +1,34 @@
 # Full-game media E2E smoke test
 
+## Server-owned production (no browser required)
+
+`pokereplay` runs production for every finished run tagged `purpose: "full_e2e"`. Once a minute it lists those runs from wall. For each run that ends `reason=done` with the adapter's `stats.goal_complete=true`, it moves through: broadcast render → producer assessment → episode and Short edits → packages and thumbnail → **private** publication candidates. It calls its own Studio handlers in-process, so the quality gates and validation are the same as the operator path. Renders remain wall-leased jobs. Progress is stored in S3 at `studio/<sha256(run)>/production/v1.json`, which pins the LLM-backed producer assessment so it is never repeated, and survives replay restarts. Read it with `GET /v1/runs/{id}/production`; Media → Full E2E shows it as **Production**. A stage that fails five passes in a row stops as `failed_<stage>` with its error.
+
+Production never approves or uploads. Candidates wait in Studio for review and private upload. The browser coordinator and CLI described below still work for manual or upload testing, but nothing needs to stay open for media to be produced.
+
+## Durable E2E badge and database filtering
+
+**New Full E2E launches are explicitly tagged `purpose: "full_e2e"`** at farm run creation, independently of the goal, play style and model. This is saved with the run's authoritative record and materialized as an indexed `runs.purpose` column by PostgreSQL schema migration 007 (local SQLite catalogs receive the same column). It is returned from both `GET /v1/runs/{id}` and `GET /v1/dashboard`.
+
+Operators can filter all completed E2E runs through **Runs → E2E only** or query `GET /v1/dashboard?status=done&purpose=full_e2e&limit=25&offset=0`. Active tagged runs are available at `GET /v1/dashboard?active=1&purpose=full_e2e`. Runs and Media Library show an **E2E** badge only for the explicit database tag. Media → Full E2E loads tagged active/finished runs using this database filter, rather than depending on the last few generic runs.
+
+The badge means **launched as E2E**, not **E2E passed**. Outcome and media upload completion come from separate authoritative game/replay/publication records. Launches created before this change remain untagged (even if a previous UI workflow started them), because goal text or ID prefixes are not trustworthy evidence of E2E intent. The compatibility section can still surface them as possible Champion source runs.
+
+## Finding a previous E2E run and checking whether it worked
+
+Go to **Media → Full E2E**. The **E2E runs and Champion candidates** section now restores the last 100 browser E2E receipts across reloads (on the same browser/origin) and discovers recent Pokémon Red Champion-goal runs directly from the farm API, including still-running games. Farm-discovered runs are marked **Champion candidate**, not automatically claimed as E2E runs: old run specs did not record the E2E intent durably. If an older run has fallen out of the recent dashboard window, enter its ID in **Existing run**.
+
+Select a run to see **Server evidence**, refreshed approximately every 10 seconds: the current game state, authoritative Champion goal flag, broadcast render state and episode/Short publication queue. A previous browser receipt is shown separately from independently fetched server state. **Two private upload receipts recorded** requires durable `published` candidates with private intent and provider video IDs; it does **not** independently prove YouTube-side visibility. **Episode + Short in publication queue** only proves both private candidates exist, not a finished upload.
+
+An earlier `working` browser receipt is explicitly presented as **interrupted** after reload, never falsely shown as still executing or successful. **Resume production · no upload** attaches to the same run without creating a second game and completes remaining production stages if the game qualifies. It never silently restores consent to upload: real uploads must be explicitly enabled and confirmed again. This history is a **browser-local troubleshooting aid**, not yet the desired server-owned E2E job ledger, which remains tracked by #2794. Jobs started on another device or browser are discoverable through the farm's Champion-run history, but their original E2E intent may not be provable.
+
 ## Operator UI: New run → Full E2E (recommended)
 
 Open the **private operator UI → New run**, choose **Pokémon Red** and **Play the game** as the LLM planner, then select **Run workflow → Full E2E · complete game → episode + Short**. The workflow locks the goal to *Beat the Elite Four and Champion*, makes the campaign finite, and uses resilient recovery while retaining the selected model, starter, seed, play style and FPS.
 
-Press **Start Full E2E** **once**. The New run screen creates exactly one farm run and automatically starts production coordination for that accepted run ID. It navigates to **Media → Full E2E**, where you can watch the game, replay rendering, episode and portrait Short editing, quality-gated private candidates and (if opted in) upload receipts. No second Start click or second game run is required. You may navigate to other operator screens while the same page stays open; the active coordinator is shared at application scope rather than owned by the Media tab.
+Press **Start Full E2E** **once**. The New run screen queues exactly one farm run tagged `purpose=full_e2e` and opens **Media → Full E2E** for it. pokereplay's production loop (`cmd/pokereplay/production.go`) owns everything after that, so no browser needs to stay open: once the run finishes with the goal flag it renders the broadcast replay, asks the producer, renders the episode and portrait Short, packages them with a thumbnail, and creates private publication candidates. Progress is `GET /v1/runs/{id}/production`; a run that exhausted its retries shows **Retry production** (`POST /v1/runs/{id}/production/retry`).
 
-Uploads are **off by default**. To publish actual media, select **Also upload episode and Short privately to YouTube** and separately acknowledge the two real uploads **before** clicking Start Full E2E. The pipeline never offers public or unlisted uploads in this mode, and the existing producer and Studio upload gates remain authoritative.
+Uploads are **off by default**. Tick **Also upload … as private videos** and its acknowledgment before **Start Full E2E** to record `POST /v1/runs/{id}/production {"upload_private":true}` (refused when the replay server has no uploader, before any gameplay is queued). The loop then approves and publishes each private candidate through the normal Studio publish action, one at a time, waiting on channel pacing, and records the video links. A candidate blocked by the quality gate ends production as `failed_<format>_upload`; public or unlisted is never used. The same request on a run sitting in `ready_for_review` uploads it after the fact.
 
 ## Operator UI: Media → Full E2E (attach or replay)
 

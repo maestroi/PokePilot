@@ -52,6 +52,7 @@ type runtimeDashboardQuery struct {
 	outcome string
 	how     string
 	starter string
+	purpose string
 }
 
 func (w *Wall) handleRuntimeDashboard(res http.ResponseWriter, req *http.Request) {
@@ -63,6 +64,7 @@ func (w *Wall) handleRuntimeDashboard(res http.ResponseWriter, req *http.Request
 		outcome: strings.ToLower(strings.TrimSpace(q.Get("outcome"))),
 		how:     strings.ToLower(strings.TrimSpace(q.Get("how"))),
 		starter: strings.TrimSpace(q.Get("starter")),
+		purpose: strings.TrimSpace(q.Get("purpose")),
 	}
 	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -171,6 +173,9 @@ func (w *Wall) runtimeDashboardSnapshot(query runtimeDashboardQuery) runtimeDash
 			continue
 		}
 		if query.starter != "" && runtimeStarter(t) != query.starter {
+			continue
+		}
+		if query.purpose != "" && string(t.Purpose) != query.purpose {
 			continue
 		}
 		matchIndex := total

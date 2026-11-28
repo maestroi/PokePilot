@@ -133,6 +133,103 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 	}
 }
 
+// Route 37 (15,17) is walkable tall grass on the south seam, but its Route 36
+// landing (35,0) is a wall. Connection approach must skip that exit and walk
+// west to a seam tile whose neighbour landing is enterable (triage:86945c007e2c2fbb).
+func TestNativeConnectionApproachSkipsUnwalkableLandings(t *testing.T) {
+	// Source 4x2 tiles (2x1 blocks). South edge y=1 is fully walkable.
+	source := nativeTestGrid(t, 4, 2, []bool{
+		true, true, true, true,
+		true, true, true, true,
+	})
+	// Dest 8x2 tiles. North edge walkable only for x=0..1; x=2..7 are walls.
+	// Offset 0 => landing x equals source x, so source x=2,3 must be rejected.
+	destWalk := make([]bool, 8*2)
+	for x := 0; x < 8; x++ {
+		destWalk[x] = x < 2 // north row
+		destWalk[8+x] = true
+	}
+	dest, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID:         0x0a03,
+		Width:         8,
+		Height:        2,
+		Walkable:      destWalk,
+		CollisionTile: make([]uint8, 8*2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := nativeConnectionGridProvider{
+		headers: nativeConnectionTestProvider{
+			0x0a04: {ID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1},
+			0x0a03: {ID: 0x0a03, WidthBlocks: 4, HeightBlocks: 1},
+		},
+		grids: map[uint16]*world.NativeGrid{0x0a03: dest},
+	}
+	edge := world.NativeEdge{
+		Kind: world.EdgeConnection, From: 0x0a04, To: 0x0a03, Dir: 1, Offset: 0,
+	}
+	live := game.LiveTopologyState{NativeMapID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1}
+	// Stand on the wall-landing seam tile (3,1); approach must relocate to x<=1.
+	path, push, err := nativeConnectionApproach(provider, source, live, edge, 3, 1, nil)
+	if err != nil {
+		t.Fatalf("nativeConnectionApproach: %v", err)
+	}
+	if push != (world.NativeStep{DY: 1}) {
+		t.Fatalf("push = %+v, want south", push)
+	}
+	x, y := 3, 1
+	for _, step := range path {
+		x, y = x+step.DX, y+step.DY
+	}
+	if y != 1 || x > 1 {
+		t.Fatalf("approach ended at (%d,%d), want south-edge x in 0..1", x, y)
+	}
+	targets, err := nativeConnectionTargets(provider, source, live, edge, nil)
+	if err != nil {
+		t.Fatalf("nativeConnectionTargets: %v", err)
+	}
+	for _, at := range targets {
+		if at[0] > 1 {
+			t.Fatalf("targets include wall-landing seam %+v: %v", at, targets)
+		}
+	}
+	if len(targets) != 2 {
+		t.Fatalf("targets = %v, want exactly x=0 and x=1", targets)
+	}
+}
+
+type nativeConnectionGridProvider struct {
+	headers nativeConnectionTestProvider
+	grids   map[uint16]*world.NativeGrid
+}
+
+func (p nativeConnectionGridProvider) MapIDs() []uint16 { return p.headers.MapIDs() }
+
+func (p nativeConnectionGridProvider) ParseMap(id uint16) (worldmodel.NativeMapHeader, error) {
+	return p.headers.ParseMap(id)
+}
+
+func (p nativeConnectionGridProvider) Grid(mapID uint16, _ []byte, _ worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
+	g, ok := p.grids[mapID]
+	if !ok {
+		return worldmodel.NativeGridSpec{}, errors.New("missing test grid")
+	}
+	walkable := make([]bool, g.Width*g.Height)
+	for y := 0; y < g.Height; y++ {
+		for x := 0; x < g.Width; x++ {
+			walkable[y*g.Width+x] = g.Walkable(x, y)
+		}
+	}
+	return worldmodel.NativeGridSpec{
+		MapID:         mapID,
+		Width:         g.Width,
+		Height:        g.Height,
+		Walkable:      walkable,
+		CollisionTile: make([]uint8, g.Width*g.Height),
+	}, nil
+}
+
 func TestNativeRuntimeBlockersAvoidWarpsAndObjects(t *testing.T) {
 	live := game.LiveTopologyState{
 		LiveObjects: []game.LiveMapObject{{Slot: 1, X: 3, Y: 4}},
@@ -498,5 +595,133 @@ func TestNativeObstacleFieldMoveCoversEveryKind(t *testing.T) {
 	}
 	if _, ok := nativeObstacleFieldMove("strength_boulder"); ok {
 		t.Fatal("an unmodelled obstacle kind must not map to a field move")
+	}
+}
+
+// modeGridProvider serves a different neighbour grid per traversal mode.
+type modeGridProvider struct {
+	nativeConnectionGridProvider
+	water map[uint16]*world.NativeGrid
+}
+
+func (p modeGridProvider) Grid(mapID uint16, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
+	if mode == worldmodel.TraversalWater {
+		return nativeConnectionGridProvider{headers: p.headers, grids: p.water}.Grid(mapID, blocks, mode)
+	}
+	return p.nativeConnectionGridProvider.Grid(mapID, blocks, mode)
+}
+
+// A Surf bridge plans connection targets on the WATER grid while the player
+// is still on land. Route 41's landings below Route 40 are water, so judging
+// them in the live land mode rejected every target and Route 40 -> Cianwood
+// became "no route" (run-q2npbhk1bwjy11avz6nokkojv).
+func TestNativeConnectionTargetsJudgeLandingInSourceTraversal(t *testing.T) {
+	walls := make([]bool, 4*2)
+	sea := []bool{true, true, true, true, true, true, true, true}
+	destLand, _ := world.NativeGridFromSpec(worldmodel.NativeGridSpec{MapID: 0x0a03, Width: 4, Height: 2, Walkable: walls, CollisionTile: make([]uint8, 8)})
+	destWater, _ := world.NativeGridFromSpec(worldmodel.NativeGridSpec{MapID: 0x0a03, Width: 4, Height: 2, Walkable: sea, CollisionTile: make([]uint8, 8)})
+	provider := modeGridProvider{
+		nativeConnectionGridProvider: nativeConnectionGridProvider{
+			headers: nativeConnectionTestProvider{
+				0x0a04: {ID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1},
+				0x0a03: {ID: 0x0a03, WidthBlocks: 2, HeightBlocks: 1},
+			},
+			grids: map[uint16]*world.NativeGrid{0x0a03: destLand},
+		},
+		water: map[uint16]*world.NativeGrid{0x0a03: destWater},
+	}
+	sourceWater, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID: 0x0a04, Width: 4, Height: 2, Walkable: sea, CollisionTile: make([]uint8, 8), Traversal: worldmodel.TraversalWater,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge := world.NativeEdge{Kind: world.EdgeConnection, From: 0x0a04, To: 0x0a03, Dir: 1}
+	live := game.LiveTopologyState{NativeMapID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1, Traversal: game.TraversalLand}
+	targets, err := nativeConnectionTargets(provider, sourceWater, live, edge, nil)
+	if err != nil || len(targets) != 4 {
+		t.Fatalf("water targets = %v err=%v, want all 4 south-seam tiles", targets, err)
+	}
+}
+
+// TestNativeTeleporterProofsSealRoomsAcrossPads pins Saffron Gym's shape: two
+// rooms split by a wall, linked only by a same-map pad pair. From the west
+// room the exit door in the east room is sealed, but the pad is not, so the
+// planner can chain pad -> door instead of discovering seals one try at a time.
+func TestNativeTeleporterProofsSealRoomsAcrossPads(t *testing.T) {
+	const w, h = 5, 3
+	walk := make([]bool, w*h)
+	for i := range walk {
+		walk[i] = i%w != 2 // column 2 is a wall
+	}
+	grid := nativeTestGrid(t, w, h, walk)
+	const gym = 0x1904
+	header := worldmodel.NativeMapHeader{ID: gym, Warps: []worldmodel.NativeWarp{
+		{X: 0, Y: 1, DestMap: gym, DestWarpID: 1}, // west pad
+		{X: 4, Y: 1, DestMap: gym, DestWarpID: 0}, // east pad
+		{X: 4, Y: 2, DestMap: 0x1902},             // east door
+	}}
+	edges := []world.NativeEdge{
+		{Kind: world.EdgeWarp, From: gym, To: gym, WarpX: 0, WarpY: 1, DestWarp: 1},
+		{Kind: world.EdgeWarp, From: gym, To: gym, WarpX: 4, WarpY: 1, DestWarp: 0},
+		{Kind: world.EdgeWarp, From: gym, To: 0x1902, WarpX: 4, WarpY: 2},
+	}
+	bad := map[world.NativeUnreachable]bool{}
+	for _, u := range nativeTeleporterProofs(nil, grid, game.LiveTopologyState{}, header, edges, gym, world.NativeEntryUnknown, 1, 0) {
+		bad[u] = true
+	}
+	if !bad[world.NativeUnreachable{Map: gym, Entry: world.NativeEntryUnknown, Edge: edges[2]}] {
+		t.Fatal("east door must be sealed from the west room")
+	}
+	if bad[world.NativeUnreachable{Map: gym, Entry: world.NativeEntryUnknown, Edge: edges[0]}] {
+		t.Fatal("west pad must stay reachable from the west room")
+	}
+	if bad[world.NativeUnreachable{Map: gym, Entry: 1, Edge: edges[2]}] {
+		t.Fatal("east pad landing must reach the east door")
+	}
+	g := &world.NativeGraph{Edges: map[uint16][]world.NativeEdge{gym: edges, 0x1902: nil}}
+	route, err := world.FindNativeRouteToEntry(g, gym, world.NativeEntryUnknown, 0x1902, nil, bad)
+	if err != nil || len(route) != 2 || route[0] != edges[0] || route[1] != edges[2] {
+		t.Fatalf("route = %+v, %v; want west pad then east door", route, err)
+	}
+}
+
+// A standing NPC sealing a corridor (the S.S. Aqua duty sailor) is durable:
+// waiting cannot open it. A wandering sprite stays transient.
+func TestNativeDurableBlockersKeepStationaryNPCs(t *testing.T) {
+	header := worldmodel.NativeMapHeader{Warps: []worldmodel.NativeWarp{{X: 0, Y: 0}}}
+	live := game.LiveTopologyState{LiveObjects: []game.LiveMapObject{
+		{Slot: 1, X: 2, Y: 2, Stationary: true},
+		{Slot: 2, X: 3, Y: 3},
+	}}
+	got := nativeDurableBlockers(live, header)
+	if !got[[2]int{2, 2}] || got[[2]int{3, 3}] || !got[[2]int{0, 0}] {
+		t.Fatalf("durable blockers = %v; want warp + stationary NPC only", got)
+	}
+}
+
+// Vermilion's shape: a wall row splits the map. The north seam lands in the
+// goal's half, the east seam only in the pocket, so only the north seam is
+// a good entry for re-routing.
+func TestNativeSeamReachesOnlyFromLandingsInTheGoalComponent(t *testing.T) {
+	const w, h = 4, 5
+	walk := make([]bool, w*h)
+	for i := range walk {
+		walk[i] = i/w != 2 // row 2 is a wall
+	}
+	grid := nativeTestGrid(t, w, h, walk)
+	const city, route6, route11 = 0x0c03, 0x0c01, 0x0c02
+	provider := nativeConnectionGridProvider{headers: nativeConnectionTestProvider{
+		route6:  {ID: route6, WidthBlocks: 2, HeightBlocks: 2},
+		route11: {ID: route11, WidthBlocks: 2, HeightBlocks: 1}, // rows 0-1 only
+	}}
+	goal := NativeDestination{Map: city, X: 1, Y: 1}
+	north := world.NativeEdge{Kind: world.EdgeConnection, From: route6, To: city, Dir: 1}             // south from Route 6
+	east := world.NativeEdge{Kind: world.EdgeConnection, From: route11, To: city, Dir: 2, Offset: -2} // west from Route 11, rows 4+
+	if !nativeSeamReaches(provider, grid, north, nil, goal) {
+		t.Fatal("north seam lands beside the goal")
+	}
+	if nativeSeamReaches(provider, grid, east, nil, goal) {
+		t.Fatal("east seam lands only in the walled-off pocket")
 	}
 }

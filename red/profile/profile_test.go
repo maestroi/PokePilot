@@ -106,11 +106,13 @@ func TestStartMenuEntryIndexTracksRedPokedexLayout(t *testing.T) {
 	var mem fakeMemory
 	assertIndex(&mem, game.StartMenuPokemon, 0)
 	assertIndex(&mem, game.StartMenuItems, 1)
+	assertIndex(&mem, game.StartMenuSave, 3)
 
 	event := uint16(state.EventGotPokedex)
 	mem[sym.EventFlags+event/8] |= 1 << (event % 8)
 	assertIndex(&mem, game.StartMenuPokemon, 1)
 	assertIndex(&mem, game.StartMenuItems, 2)
+	assertIndex(&mem, game.StartMenuSave, 4)
 
 	if _, ok := p.StartMenuEntryIndex(&mem, game.StartMenuEntry("pokegear")); ok {
 		t.Fatal("unknown START-menu entry unexpectedly resolved")

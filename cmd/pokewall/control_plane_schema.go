@@ -244,6 +244,16 @@ CREATE INDEX IF NOT EXISTS objective_failures_family_idx
     ON objective_failures(family_key, updated_at DESC);
 `
 
+// Purpose is persisted alongside the durable row JSON, so E2E-only queries
+// can use a selective PostgreSQL index instead of scanning all history blobs.
+// Older rows remain untagged rather than guessing from goal/run ID.
+const controlPlaneMigration007 = `
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS runs_purpose_ended_idx
+    ON runs (purpose, ended_at DESC, queued_at DESC)
+    WHERE purpose <> '';
+`
+
 type controlPlane struct {
 	db                *sql.DB
 	experimentPersist sync.Mutex
@@ -259,6 +269,8 @@ func controlPlaneFor(w *Wall) *controlPlane {
 	return nil
 }
 
+const controlPlaneConnectWait = 3 * time.Minute
+
 func (w *Wall) SetControlPlaneDatabase(dsn string) error {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
@@ -273,15 +285,18 @@ func (w *Wall) SetControlPlaneDatabase(dsn string) error {
 	}
 	db.SetMaxOpenConns(16)
 	db.SetMaxIdleConns(4)
+	// Outlast a Postgres restart and the rollout's 60s update monitor: an
+	// early exit while the database is briefly down (DNS "no such host")
+	// reads as a crash-looping image, rolls the wall back and freezes deploys.
 	var pingErr error
-	for attempt := 0; attempt < 20; attempt++ {
+	for deadline := time.Now().Add(controlPlaneConnectWait); ; {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		pingErr = db.PingContext(ctx)
 		cancel()
-		if pingErr == nil {
+		if pingErr == nil || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Second)
 	}
 	if pingErr != nil {
 		_ = db.Close()
@@ -386,6 +401,18 @@ func (cp *controlPlane) migrate() error {
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(6) ON CONFLICT DO NOTHING`); err != nil {
 			return fmt.Errorf("record control-plane migration 6: %w", err)
+		}
+	}
+	var applied7 bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=7)`).Scan(&applied7); err != nil {
+		return fmt.Errorf("read migration version 7: %w", err)
+	}
+	if !applied7 {
+		if _, err := tx.Exec(controlPlaneMigration007); err != nil {
+			return fmt.Errorf("apply control-plane migration 7: %w", err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(version) VALUES(7) ON CONFLICT DO NOTHING`); err != nil {
+			return fmt.Errorf("record control-plane migration 7: %w", err)
 		}
 	}
 	return tx.Commit()

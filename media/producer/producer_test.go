@@ -70,7 +70,7 @@ func TestRulesAssessmentIsDeterministicAndValid(t *testing.T) {
 	if a.Publication != FullEpisode || len(a.Beats) == 0 {
 		t.Fatalf("expected evidenced episode candidate: %+v", a)
 	}
-	if a.Model != "rules-v1" || a.PromptVersion != "none" {
+	if a.Model != rulesIdentity || a.PromptVersion != "none" {
 		t.Fatalf("invalid offline identity: %+v", a)
 	}
 	if err := Validate(a, in); err != nil {
@@ -171,5 +171,42 @@ func TestOlderRunsMissingTerminalStateNeverPromote(t *testing.T) {
 	}
 	if out.Publication != ArchiveOnly {
 		t.Fatalf("unverified terminal status promoted: %s", out.Publication)
+	}
+}
+
+// The offline producer must tell a long run's arc (every badge with its battle,
+// each defeat and the rematch that answered it, the finish) in viewer text,
+// not keep only the first event of each type with raw planner summaries.
+func TestRulesTellsDefeatRematchAndBadgeArc(t *testing.T) {
+	tl := farm.MediaTimeline{
+		Run:     farm.MediaRunSummary{RunID: "arc", Status: "done", Goal: "Beat the league."},
+		Attempt: 1, EndFrame: 100000, FramesPerSecond: 60,
+		Events: []farm.MediaEvent{
+			{Type: "boss_battle", StartFrame: 900, Frame: 1000, Objective: "progress gym_one", Summary: "won", Metadata: map[string]string{"result": "won"}},
+			{Type: "badge_acquired", Frame: 1100, Summary: "acquired One", Metadata: map[string]string{"badge": "One"}},
+			{Type: "badge_acquired", Frame: 9000, Summary: "acquired Two", Metadata: map[string]string{"badge": "Two"}},
+			{Type: "boss_battle", StartFrame: 20000, Frame: 21000, Objective: "progress boss", Summary: "lost", Metadata: map[string]string{"result": "lost"}},
+			{Type: "boss_battle", StartFrame: 30000, Frame: 31000, Objective: "progress boss", Summary: "won", Metadata: map[string]string{"result": "won"}},
+			{Type: "run_finished", Frame: 32000, Summary: "done"},
+		},
+	}.Normalized()
+	a, err := Assess(context.Background(), Input{RunID: "arc", Timelines: []farm.MediaTimeline{tl}}, nil, DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, b := range a.Beats {
+		got = append(got, b.Summary)
+	}
+	want := []string{"Badge earned: One", "Badge earned: Two", "Defeated: this battle will have to be fought again",
+		"Rematch won after 1 defeat", "Goal complete: Beat the league."}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("beats = %q, want %q", got, want)
+	}
+	if len(a.Beats[0].Evidence) != 2 || a.Beats[0].Evidence[0].EventID != tl.Events[0].ID {
+		t.Fatalf("badge beat should cite the battle that earned it: %+v", a.Beats[0].Evidence)
+	}
+	if a.PrimaryStory != "Goal: Beat the league. 2 badges earned, 1 defeat overcome." {
+		t.Fatalf("story = %q", a.PrimaryStory)
 	}
 }

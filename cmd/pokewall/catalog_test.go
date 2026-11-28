@@ -142,3 +142,53 @@ func TestCatalogHistoryDashboardOmitsStrategicRecords(t *testing.T) {
 		t.Fatalf("stored row lost strategic records: ok=%v err=%v", ok, err)
 	}
 }
+
+// History lives in the catalog, not RAM. A newest-first page must reach the
+// catalog with its limit (not scan every finished row), and an archive page
+// pass must read only the runs it returns. Scanning all ~4.5k rows twice kept
+// Live "Recent" past the 5s operator proxy timeout.
+func TestArchiveCatalogPagesWithoutFullHistoryScan(t *testing.T) {
+	w := NewWall("")
+	if err := w.SetCatalogPath(filepath.Join(t.TempDir(), "catalog.db")); err != nil {
+		t.Fatal(err)
+	}
+	catalog := catalogFor(w)
+	for i, id := range []string{"old", "mid", "new"} {
+		if err := catalog.upsert(tileRow{RunID: id, Status: statusDone, Reason: "done", EndedAt: int64(100 + i), Question: "full " + id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var seen []string
+	inner := w.catalogHTTPHandler(http.NotFoundHandler())
+	spy := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		seen = append(seen, req.URL.Query().Get("limit")+"|"+req.Header.Get(archiveRunsHeader))
+		inner.ServeHTTP(res, req)
+	})
+	handler := archiveHTTPHandler(w, spy)
+	get := func(query string) []tileRow {
+		t.Helper()
+		seen = nil
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?"+query, nil))
+		var view struct{ Runs []tileRow }
+		if err := json.Unmarshal(res.Body.Bytes(), &view); err != nil {
+			t.Fatalf("%s: %v %s", query, err, res.Body.String())
+		}
+		return view.Runs
+	}
+
+	if runs := get("status=done&limit=2"); len(runs) != 2 || runs[0].RunID != "new" || runs[1].RunID != "mid" {
+		t.Fatalf("default page = %+v, want new, mid", runs)
+	}
+	if len(seen) != 1 || seen[0] != "2|" {
+		t.Fatalf("default page reached catalog as %q, want one limit=2 read", seen)
+	}
+
+	runs := get("status=done&limit=1&facets=1&sort=frames&direction=asc")
+	if len(runs) != 1 || runs[0].Question == "" {
+		t.Fatalf("faceted page = %+v, want one full row", runs)
+	}
+	if len(seen) != 2 || seen[1] != "|"+runs[0].RunID {
+		t.Fatalf("faceted passes = %q, want index then page read of %s only", seen, runs[0].RunID)
+	}
+}

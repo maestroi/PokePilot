@@ -43,10 +43,11 @@ type RunPurpose string
 const (
 	RunPurposeNormal        RunPurpose = "normal"
 	RunPurposeDebugCoverage RunPurpose = "debug_coverage"
+	RunPurposeFullE2E       RunPurpose = "full_e2e"
 )
 
 func (p RunPurpose) Valid() bool {
-	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage
+	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage || p == RunPurposeFullE2E
 }
 
 // Spec is one run's configuration, filled either by CLI flags (today) or
@@ -99,7 +100,10 @@ type Spec struct {
 	// this run, independently of the strategist deployment. Nil keeps the
 	// runner's environment default.
 	DecisionEngine *DecisionEngineSpec `json:"decision_engine,omitempty"`
-	FPS            int                 `json:"fps"`
+	// TrainingCapture opts this run into a complete, compressed strategist/chooser
+	// dataset artifact. Disabled by default; it does not alter gameplay policy.
+	TrainingCapture bool `json:"training_capture,omitempty"`
+	FPS             int  `json:"fps"`
 	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
 	// Zero is the normal goal-driven mode: there is no hard round limit and
 	// the run ends on goal completion, a real failure, cancellation, or the

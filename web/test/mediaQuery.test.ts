@@ -220,3 +220,4 @@ test('Full E2E is a first-class Media route and keeps a selected source', () => 
   assert.equal(tabHref(state, 'studio'), '?run=e2e-test#media/studio')
   assert.equal(tabHref(state, 'e2e'), '?run=e2e-test#media/e2e')
 })
+

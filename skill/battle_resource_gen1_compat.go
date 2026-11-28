@@ -13,32 +13,11 @@ func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
 }
 
 func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
-	var strongest uint8
-	found := false
-	for _, med := range hpMedicines {
-		if !bagHasItem(mem, med.item) {
-			continue
-		}
-		strongest = med.item
-		found = true
-		if med.heal >= missing {
-			return med.item, true
-		}
-	}
-	return strongest, found
+	return chooseHPMedicineState(gen1BattleResourcesFromMem(mem), missing)
 }
 
 func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
-	specific, ok := statusCure(status)
-	if !ok {
-		return 0, false
-	}
-	for _, item := range []uint8{specific, itemFullHeal, itemFullRestore} {
-		if bagHasItem(mem, item) {
-			return item, true
-		}
-	}
-	return 0, false
+	return chooseStatusMedicineState(gen1BattleResourcesFromMem(mem), status)
 }
 
 func bagHasItem(mem *state.Mem, item uint8) bool {

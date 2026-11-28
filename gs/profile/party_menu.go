@@ -24,7 +24,10 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 	inBattle := reader.Peek8(sym.BattleMode) != 0
 	kind := game.PartyMenuKind("")
 	switch {
-	case inBattle && strings.Contains(text, "Use on which"):
+	case strings.Contains(text, "Use on which") && !strings.Contains(text, "CANCEL USE"):
+		// Both battle and overworld medicines use the retail party selector.
+		// Unlike the stale party-menu cursor bytes, the rendered prompt is
+		// a positive indicator that a target slot can be selected.
 		kind = game.PartyMenuItemUse
 	case inBattle && strings.Contains(text, "CANCEL"):
 		// The battle party list renders a CANCEL row. The bottom prompt is

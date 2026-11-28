@@ -306,7 +306,8 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 			continue
 		}
 		owned := bagQuantity(o, name)
-		canStore := owned > 0 || ctx.BagSlotsFree > 0
+		// Buy execution frees a reclaimable slot itself (EnsureBagSpaceFor).
+		canStore := owned > 0 || ctx.BagSlotsFree > 0 || o.ReclaimableBagSlots > 0
 		advice := PurchaseAdvice{
 			Item:                  name,
 			Category:              spec.Category,
@@ -568,43 +569,103 @@ func progressionFundingShortfall(o Observation) uint32 {
 	}
 	// A dry Dex run is the same dead end: run-d6dokr184ky81 sat post-Champion
 	// at 79/139 with ¥87 and no normal balls, wandering between towns because
-	// restockCaptureObjectives could not afford a single ball.
-	if len(o.Dex.Targets) > 0 && normalBallStock(o) < minimumCaptureStock {
-		need += uint32(minimumCaptureStock-normalBallStock(o)) * itemEconomy["pokeball"].UnitPrice
+	// restockCaptureObjectives could not afford a single ball. Fund the whole
+	// remaining stock target, not just the 5-ball floor: run-ib9smf1mzpcih
+	// sat post-Champion with ¥1137, enough for the floor, against 74 targets.
+	if balls := normalBallStock(o); len(o.Dex.Targets) > 0 && balls < minimumCaptureStock {
+		need += uint32(captureStockTarget(o)-balls) * itemEconomy["pokeball"].UnitPrice
 	}
 	return subtractFloor(need, o.Money)
 }
 
-// fundingSaleObjectives offers the smallest sale of each sellable,
-// non-progression bag item that covers the shortfall. Gen-I clerks pay half
-// the list price. A reachable mart is required (RestockStock is only filled
-// from live-reachable marts), so the offer stays executable.
+// fundingSaleObjectives offers the smallest sale of each sellable surplus
+// bag item (fundingSurplusCategory; stones only beyond the Dex need) that covers the shortfall. When no single item
+// covers it, each item's whole stack is offered instead: run-d6dokr184ky81
+// was ¥808 short of five balls holding one ¥350 GUARD SPEC, and selling
+// nothing left it with no ball at all. Gen-I clerks pay half the list price.
+// A reachable mart is required (RestockStock is only filled from
+// live-reachable marts), so the offer stays executable.
 func fundingSaleObjectives(o Observation) []Objective {
 	shortfall := progressionFundingShortfall(o)
 	if shortfall == 0 || len(o.RestockStock) == 0 {
 		return nil
 	}
-	var out []Objective
+	stoneNeed := dexStoneNeed(o)
+	var covering, partial []Objective
 	for _, bagged := range o.Bag {
 		spec, ok := ItemEconomy(bagged.Name)
-		if !ok || spec.UnitPrice < 2 || spec.Category == InventoryProgressionCritical || bagged.Quantity < 1 {
+		if !ok || spec.UnitPrice < 2 || !fundingSurplusCategory(spec.Name, spec.Category) || bagged.Quantity < 1 {
 			continue
+		}
+		quantity := bagged.Quantity
+		if spec.Category == InventoryEvolution {
+			// Only stones beyond what unowned Dex evolutions still need.
+			quantity -= stoneNeed[ItemID(strings.ToLower(bagged.Name))]
+			if quantity < 1 {
+				continue
+			}
 		}
 		sale := spec.UnitPrice / 2
 		qty := int((shortfall + sale - 1) / sale)
-		if qty > bagged.Quantity {
-			continue
-		}
 		item, ok := ItemByName(spec.Name)
 		if !ok {
 			if item = semanticItemFromRed(spec.ID); item == "unknown" {
 				continue
 			}
 		}
-		out = append(out, Objective{
+		if qty > quantity {
+			partial = append(partial, Objective{
+				Kind: KindSell, Item: item, Qty: quantity,
+				Note: fmt.Sprintf("(raise part of ¥%d for a required payment or capture stock the run cannot afford; the whole stack sells for ¥%d at the nearest reachable mart)", shortfall, uint32(quantity)*sale),
+			})
+			continue
+		}
+		covering = append(covering, Objective{
 			Kind: KindSell, Item: item, Qty: qty,
 			Note: fmt.Sprintf("(raise ¥%d for a required payment or capture stock the run cannot afford; sells for ¥%d at the nearest reachable mart)", shortfall, uint32(qty)*sale),
 		})
 	}
-	return out
+	if len(covering) > 0 {
+		return covering
+	}
+	return partial
+}
+
+// fundingSurplusCategory is what a funding sale may convert to money. Key items,
+// balls, travel items and HP healing (League recovery) keep their use.
+func fundingSurplusCategory(name string, category InventoryCategory) bool {
+	switch category {
+	case InventoryOptionalUtility, InventoryEvolution:
+		return true
+	case InventoryBattleConsumable:
+		_, heal := hpHealingItems[strings.ToLower(name)]
+		return !heal
+	}
+	return false
+}
+
+// incomeObjectives offers the adapter's repeatable income sources when a
+// required spend is unfunded and no surplus sale is left: run-d6dokr184ky81 sat
+// post-Champion with every trainer beaten, ¥192 and no balls, so a sale could
+// only delay the same dead end. A source the party already lost to stays
+// withheld until readiness changes, like any lost challenge.
+func incomeObjectives(o Observation, known *Knowledge, sources []CatalogIncomeSource) ([]Objective, []ObjectiveBlockEvidence) {
+	shortfall := progressionFundingShortfall(o)
+	if len(sources) == 0 || shortfall == 0 || len(fundingSaleObjectives(o)) > 0 {
+		return nil, nil
+	}
+	var out []Objective
+	var blocked []ObjectiveBlockEvidence
+	for _, source := range sources {
+		earn := Objective{
+			Kind: KindEarnMoney, Intent: source.ID,
+			Note: fmt.Sprintf("(raise ¥%d for a required payment or capture stock; %s)", shortfall, source.Note),
+		}
+		if combatLossRecorded(known, earn) {
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyEconomy, "combat_readiness", &earn, "", "material_party_progress"))
+			continue
+		}
+		out = append(out, earn)
+	}
+	return out, blocked
 }
