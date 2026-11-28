@@ -30,7 +30,7 @@ func TestGSWhitneyCorridorIsOwnedAndUsesGoldenrodCenter(t *testing.T) {
 	if !gsSecondBadgeOwnedMap(gym) || !gsSecondBadgeOwnedMap(center) {
 		t.Fatalf("Goldenrod runtime ownership: gym=%v center=%v", gsSecondBadgeOwnedMap(gym), gsSecondBadgeOwnedMap(center))
 	}
-	got, err := gsOwnedPokecenterID(city)
+	got, err := gsOwnedPokecenterID(nil, city)
 	if err != nil {
 		t.Fatal(err)
 	}

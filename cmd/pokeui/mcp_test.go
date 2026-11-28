@@ -106,8 +106,8 @@ func TestMCPStartRunAcceptsGen2(t *testing.T) {
 	if queued.Game != "pokemon-gold" || queued.Planner != "llm" || queued.Starter != "cyndaquil" {
 		t.Fatalf("Gold queued spec = %+v", queued)
 	}
-	if queued.Goal.String() != "Play through the current supported Gen 2 frontier." {
-		t.Fatalf("Gold default goal = %q, want supported frontier", queued.Goal.String())
+	if queued.Goal.String() != "progress:gs_mt_silver_red_defeated" {
+		t.Fatalf("Gold default goal = %q, want full game (defeat Red)", queued.Goal.String())
 	}
 }
 
@@ -212,10 +212,12 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run",
 		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
+		"pokepilot_get_run_attempts",
 		"pokepilot_get_run_debug",
 		"pokepilot_get_run_recovery_audit",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
+		"pokepilot_list_checkpoints",
 		"pokepilot_list_experiments",
 		"pokepilot_list_models",
 		"pokepilot_list_runs",

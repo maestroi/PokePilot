@@ -434,11 +434,12 @@ func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) 
 func resolveDirectTrainingBattle(m *emu.Emu, policy MovePolicy) (battleResolution, error) {
 	options := BattleOptions{HoldTrainingLead: true}
 	var offense trainingLeadOffense
+	var race trainingDamageRace
 	if strategy, err := combatStrategyForROM(m.ROM()); err == nil {
 		romData := m.ROM()
 		options.YieldWhen = func(b game.BattleState) bool {
 			offense = evaluateTrainingLeadOffense(strategy, romData, b)
-			return !offense.effective
+			return !offense.effective || race.lost(b)
 		}
 	}
 	outcome, err := BattleWithOptions(m, policy, options)
@@ -457,6 +458,36 @@ func resolveDirectTrainingBattle(m *emu.Emu, policy MovePolicy) (battleResolutio
 		return battleResolution{fled: true}, ErrTrainLeadSpent
 	}
 	return battleResolution{fled: true}, nil
+}
+
+// trainingDamageRace compares the HP each side has actually lost since the
+// lead's first turn in one wild battle. "Can damage" is not "can win": a L7
+// Zubat's Leech Life takes 1 HP per turn off a Route 2 Pidgey that hits back
+// for about 5, so the held lead fought to a blackout every session and combat
+// preparation commuted Pewter <-> Route 2 for 400 rounds
+// (run-1lr7kwvnvn52m1msa6de9nskdu). Net observed HP includes drain, misses
+// and the opponent's real moves, which the overworld cannot know. The race is
+// lost when, at the observed rates, the lead faints before the opponent:
+// enemyHP/dealt > leadHP/taken.
+type trainingDamageRace struct {
+	started             bool
+	leadStart, foeStart uint16
+}
+
+func (r *trainingDamageRace) lost(b game.BattleState) bool {
+	if !r.started {
+		r.started, r.leadStart, r.foeStart = true, b.ActiveHP, b.EnemyHP
+		return false
+	}
+	if b.ActiveHP >= r.leadStart {
+		return false
+	}
+	taken := uint32(r.leadStart - b.ActiveHP)
+	var dealt uint32
+	if b.EnemyHP < r.foeStart {
+		dealt = uint32(r.foeStart - b.EnemyHP)
+	}
+	return uint32(b.EnemyHP)*taken > uint32(b.ActiveHP)*dealt
 }
 
 // trainingLeadOffense classifies the active lead's moves against the live
@@ -520,7 +551,17 @@ func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy Move
 // (wPartyGainExpFlags is set for wPlayerMonNumber alone, see
 // engine/battle/experience.asm). Training a caught Caterpie to Butterfree
 // therefore starts here.
-func PromoteToLead(m *emu.Emu, index int) error {
+// ErrPartySelectionRefused reports that the game declined to select a party
+// member for the swap (Yellow's starter Pikachu after Pewter Center's
+// Jigglypuff puts it to sleep: "There isn't any response..."). PromoteToLead
+// has already backed out to the overworld, so the party order is unchanged and
+// the boundary is clean.
+var ErrPartySelectionRefused = errors.New("skill: PromoteToLead: the game refused the party selection")
+
+// errLeftPromoteScreen marks a press that left the expected swap screen.
+var errLeftPromoteScreen = errors.New("left the expected screen before the press took")
+
+func PromoteToLead(m *emu.Emu, index int) (err error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
@@ -532,6 +573,18 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}
 	want := party.Mons[index].Species
 	partyMax := int(party.Count) - 1
+	// A failed swap must not hand the caller an open START menu, party screen
+	// or refusal text: back out to the overworld before reporting it.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if backErr := backOutOfPartyMenus(m); backErr != nil {
+			err = fmt.Errorf("%w (back out: %v)", err, backErr)
+		} else if errors.Is(err, errLeftPromoteScreen) {
+			err = fmt.Errorf("%w: %w", ErrPartySelectionRefused, err)
+		}
+	}()
 
 	onScreen := func(s *state.Mem, marker string) bool {
 		return strings.Contains(state.ScreenText(s), marker)
@@ -595,7 +648,7 @@ func PromoteToLead(m *emu.Emu, index int) error {
 			}
 			state.Snapshot(m, &s)
 			if !stillHere(&s) {
-				return fmt.Errorf("skill: PromoteToLead: %s: left the expected screen before the press took", what)
+				return fmt.Errorf("skill: PromoteToLead: %s: %w", what, errLeftPromoteScreen)
 			}
 		}
 		return fmt.Errorf("skill: PromoteToLead: %s did not appear after repeated presses", what)
@@ -765,6 +818,38 @@ func PromoteToLead(m *emu.Emu, index int) error {
 		return fmt.Errorf("skill: PromoteToLead: lead is species %#02x, want %#02x", got, want)
 	}
 	return nil
+}
+
+// backOutOfPartyMenus returns to the overworld from wherever a failed swap
+// stopped: a refusal text, the party screen, or the START menu. B advances
+// text and backs each layer out; the START menu close is decoder-gated because
+// Controllable reads true while it is still drawn.
+func backOutOfPartyMenus(m *emu.Emu) error {
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < 8 && !decoder.DecodeStartMenu(m).Visible; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		if state.DecodeBattle(&s) != nil {
+			return fmt.Errorf("skill: PromoteToLead: battle owns the screen")
+		}
+		if state.Controllable(&s) && state.DecodeInteraction(&s).Kind == state.InteractionNone {
+			return nil
+		}
+		m.Tap(emu.B, 3, 7)
+		m.StepFrames(20)
+	}
+	if err := closeStartMenuWithDecoder(m, decoder); err != nil {
+		return err
+	}
+	_, err = m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
+		var s state.Mem
+		state.Snapshot(e, &s)
+		return state.Controllable(&s)
+	})
+	return err
 }
 
 // cell is a game-tile position on a map.
@@ -1326,4 +1411,16 @@ func sign(v int) int {
 		return -1
 	}
 	return 1
+}
+
+// TrainingLeadCanDamage reports whether a held training lead could make HP
+// progress against b's opponent, by the same classification direct training
+// uses to fight or flee each wild encounter. A ROM without a combat strategy
+// reports true, matching the battle path, which then never yields.
+func TrainingLeadCanDamage(romData []byte, b game.BattleState) bool {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return true
+	}
+	return evaluateTrainingLeadOffense(strategy, romData, b).effective
 }

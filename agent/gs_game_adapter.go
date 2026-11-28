@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -92,8 +93,38 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressRisingBadgeEarned,
-		// Experimental League approach; the Elite Four stays unsupported.
-		gsprofile.ProgressIndigoPlateauReached:
+		// Experimental League approach and the first event-verified Elite Four challenge.
+		gsprofile.ProgressIndigoPlateauReached,
+		gsprofile.ProgressLeagueWillDefeated,
+		gsprofile.ProgressLeagueKogaDefeated,
+		gsprofile.ProgressLeagueBrunoDefeated,
+		gsprofile.ProgressLeagueKarenDefeated,
+		gsprofile.ProgressLeagueLanceDefeated,
+		gsprofile.ProgressLeagueHallOfFameEntered,
+		gsprofile.ProgressSSTicketReceived,
+		gsprofile.ProgressKantoFirstLanding,
+		gsprofile.ProgressKantoThunderBadgeEarned,
+		gsprofile.ProgressKantoMarshBadgeEarned,
+		gsprofile.ProgressKantoRainbowBadgeEarned,
+		gsprofile.ProgressKantoSoulBadgeEarned,
+		gsprofile.ProgressKantoCascadeBadgeEarned,
+		gsprofile.ProgressKantoBoulderBadgeEarned,
+		gsprofile.ProgressKantoVolcanoBadgeEarned,
+		gsprofile.ProgressKantoEarthBadgeEarned,
+		gsprofile.ProgressKantoManagerMet,
+		gsprofile.ProgressKantoRocketAtGym,
+		gsprofile.ProgressKantoMachinePartFound,
+		gsprofile.ProgressKantoPowerRestored,
+		gsprofile.ProgressKantoCopycatMet,
+		gsprofile.ProgressKantoLostDollReceived,
+		gsprofile.ProgressKantoRailPassReceived,
+		gsprofile.ProgressKantoMistyReturned,
+		gsprofile.ProgressKantoBlueInvited,
+		gsprofile.ProgressRadioCardReceived,
+		gsprofile.ProgressKantoExpansionCard,
+		gsprofile.ProgressKantoSnorlaxCleared,
+		gsprofile.ProgressMtSilverOpened,
+		gsprofile.ProgressMtSilverRedDefeated:
 		return true
 	default:
 		return false
@@ -167,7 +198,8 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 	if !facts.InBattle && (gsOpeningScriptMap(facts.NativeMapID) || gsErrandScriptMap(facts.NativeMapID)) {
 		return nil
 	}
-	if facts.GaveMysteryEggToElm && (gsFirstBadgeOwnedMap(facts.NativeMapID) || gsSecondBadgeOwnedMap(facts.NativeMapID)) {
+	if facts.GaveMysteryEggToElm && (gsFirstBadgeOwnedMap(facts.NativeMapID) || gsSecondBadgeOwnedMap(facts.NativeMapID) ||
+		gsrom.PostLeagueMap(a.m.ROM(), facts.NativeMapID)) {
 		return nil
 	}
 	return fmt.Errorf("%w: map=%#04x at (%d,%d) controllable=%v battle=%v script=%v",
@@ -298,6 +330,54 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSDragonFangRising(a.m, a.romData)
 		case gsprofile.ProgressIndigoPlateauReached:
 			err = executeGSIndigoPlateau(a.m, a.romData)
+		case gsprofile.ProgressLeagueWillDefeated:
+			err = executeGSLeagueWill(a.m, a.romData)
+		case gsprofile.ProgressLeagueKogaDefeated, gsprofile.ProgressLeagueBrunoDefeated, gsprofile.ProgressLeagueKarenDefeated:
+			err = executeGSLeagueMember(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressLeagueLanceDefeated, gsprofile.ProgressLeagueHallOfFameEntered:
+			err = executeGSLeagueChampion(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressSSTicketReceived:
+			err = executeGSSSTicket(a.m, a.romData)
+		case gsprofile.ProgressKantoFirstLanding:
+			err = executeGSFirstKantoLanding(a.m, a.romData)
+		case gsprofile.ProgressKantoThunderBadgeEarned:
+			err = executeGSKantoSurge(a.m, a.romData)
+		case gsprofile.ProgressKantoMarshBadgeEarned,
+			gsprofile.ProgressKantoRainbowBadgeEarned,
+			gsprofile.ProgressKantoSoulBadgeEarned,
+			gsprofile.ProgressKantoCascadeBadgeEarned,
+			gsprofile.ProgressKantoBoulderBadgeEarned,
+			gsprofile.ProgressKantoVolcanoBadgeEarned,
+			gsprofile.ProgressKantoEarthBadgeEarned:
+			err = executeGSKantoGym(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressKantoManagerMet:
+			err = executeGSKantoPowerManager(a.m, a.romData)
+		case gsprofile.ProgressKantoRocketAtGym:
+			err = executeGSKantoRocketAtGym(a.m, a.romData)
+		case gsprofile.ProgressKantoMachinePartFound:
+			err = executeGSKantoMachinePart(a.m, a.romData)
+		case gsprofile.ProgressKantoPowerRestored:
+			err = executeGSKantoRestorePower(a.m, a.romData)
+		case gsprofile.ProgressKantoCopycatMet:
+			err = executeGSKantoMeetCopycat(a.m, a.romData)
+		case gsprofile.ProgressKantoLostDollReceived:
+			err = executeGSKantoReceiveLostDoll(a.m, a.romData)
+		case gsprofile.ProgressKantoRailPassReceived:
+			err = executeGSKantoReceiveRailPass(a.m, a.romData)
+		case gsprofile.ProgressKantoMistyReturned:
+			err = executeGSKantoMistyDate(a.m, a.romData)
+		case gsprofile.ProgressKantoBlueInvited:
+			err = executeGSKantoInviteBlue(a.m, a.romData)
+		case gsprofile.ProgressRadioCardReceived:
+			err = executeGSRadioCardQuiz(a.m, a.romData)
+		case gsprofile.ProgressKantoExpansionCard:
+			err = executeGSKantoExpansionCard(a.m, a.romData)
+		case gsprofile.ProgressKantoSnorlaxCleared:
+			err = executeGSKantoSnorlax(a.m, a.romData)
+		case gsprofile.ProgressMtSilverOpened:
+			err = executeGSMtSilverPermit(a.m, a.romData)
+		case gsprofile.ProgressMtSilverRedDefeated:
+			err = executeGSMtSilverRed(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -358,7 +438,37 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressBlackthornGymBouldersDropped,
 			gsprofile.ProgressClairDefeated,
 			gsprofile.ProgressRisingBadgeEarned,
-			gsprofile.ProgressIndigoPlateauReached:
+			gsprofile.ProgressIndigoPlateauReached,
+			gsprofile.ProgressLeagueWillDefeated,
+			gsprofile.ProgressLeagueKogaDefeated,
+			gsprofile.ProgressLeagueBrunoDefeated,
+			gsprofile.ProgressLeagueKarenDefeated,
+			gsprofile.ProgressLeagueLanceDefeated,
+			gsprofile.ProgressLeagueHallOfFameEntered,
+			gsprofile.ProgressSSTicketReceived,
+			gsprofile.ProgressKantoFirstLanding,
+			gsprofile.ProgressKantoThunderBadgeEarned,
+			gsprofile.ProgressKantoMarshBadgeEarned,
+			gsprofile.ProgressKantoRainbowBadgeEarned,
+			gsprofile.ProgressKantoSoulBadgeEarned,
+			gsprofile.ProgressKantoCascadeBadgeEarned,
+			gsprofile.ProgressKantoBoulderBadgeEarned,
+			gsprofile.ProgressKantoVolcanoBadgeEarned,
+			gsprofile.ProgressKantoEarthBadgeEarned,
+			gsprofile.ProgressKantoManagerMet,
+			gsprofile.ProgressKantoRocketAtGym,
+			gsprofile.ProgressKantoMachinePartFound,
+			gsprofile.ProgressKantoPowerRestored,
+			gsprofile.ProgressKantoCopycatMet,
+			gsprofile.ProgressKantoLostDollReceived,
+			gsprofile.ProgressKantoRailPassReceived,
+			gsprofile.ProgressKantoMistyReturned,
+			gsprofile.ProgressKantoBlueInvited,
+			gsprofile.ProgressRadioCardReceived,
+			gsprofile.ProgressKantoExpansionCard,
+			gsprofile.ProgressKantoSnorlaxCleared,
+			gsprofile.ProgressMtSilverOpened,
+			gsprofile.ProgressMtSilverRedDefeated:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -385,6 +495,19 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	// Lance and the Hall of Fame are one-way retail scripts. Their real event
+	// flags may be set while Oak/Mary/credits still own the screen, so the
+	// generic stable-overworld verifier would reject the exact moment the
+	// controller deliberately stops. Only these two verified events get
+	// this exception; every other progress objective keeps the stable gate.
+	if o.Kind == KindProgress &&
+		(o.Progress == gsprofile.ProgressLeagueLanceDefeated ||
+			o.Progress == gsprofile.ProgressLeagueHallOfFameEntered) {
+		return gsVerifyLeagueEndingEvent(o.Progress, initial, final)
+	}
+	if o.Kind == KindProgress && o.Progress == gsprofile.ProgressMtSilverRedDefeated {
+		return gsVerifyRedEndingEvent(initial, final)
+	}
 	if o.Kind == KindHeal {
 		return verifyGSCombatRecoveryHeal(final)
 	}
@@ -433,6 +556,11 @@ func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, er
 		return gameruntime.Failure{
 			Phase: phase, Class: gameruntime.FailureClassBlocked,
 			Cause: cause, Context: context, Recoverable: true,
+		}
+	case errors.Is(err, errGSLeagueAttemptReset):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassBlocked,
+			Cause: "gen2_league_attempt_reset", Recoverable: true,
 		}
 	case errors.Is(err, errGSControllerUnavailable):
 		return gameruntime.Failure{
@@ -591,6 +719,9 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressPlainBadgeEarned,
 			Note:     "(continue through Route 34 to Goldenrod, defeat Whitney, settle her crying scene, and receive the Plain Badge)",
 		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioCardReceived):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressRadioCardReceived,
+			Note: "(experimental: answer Goldenrod Radio Tower 1F's five-question quiz to receive the basic Pokégear Radio Card)"}}
 	case !obs.Story.Has(gsprofile.ProgressSquirtBottleAcquired):
 		return []Objective{{
 			Kind:     KindProgress,
@@ -812,6 +943,58 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressIndigoPlateauReached,
 			Note:     "(experimental: fly to New Bark, Surf Route 27 through Tohjo Falls, pass the badge gate, beat the rival in Victory Road and reach Indigo Plateau)",
+		}}
+	// Hall of Fame persists after the individual Elite Four victory flags
+	// reset. Offer Kanto progression instead of restarting Will's room.
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressSSTicketReceived):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressSSTicketReceived,
+			Note: "(post-League: continue after credits, visit Elm in New Bark and claim the S.S. Ticket)"}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressKantoFirstLanding):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoFirstLanding,
+			Note: "(post-League: board S.S. Aqua in Olivine, find the missing granddaughter and disembark in Vermilion)"}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressKantoThunderBadgeEarned):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoThunderBadgeEarned,
+			Note: "(experimental Kanto: reach Vermilion Gym after the first S.S. Aqua landing, defeat Lt. Surge, and receive the Thunder Badge)"}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
+		return gsKantoGymObjectives(obs)
+	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueWillDefeated,
+			Note:     "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueKogaDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueKogaDefeated,
+			Note:     "(experimental: continue through Will's opened exit and defeat Elite Four Koga)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueBrunoDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueBrunoDefeated,
+			Note:     "(experimental: continue through Koga's opened exit and defeat Elite Four Bruno)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueKarenDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueKarenDefeated,
+			Note:     "(experimental: continue through Bruno's opened exit and defeat Elite Four Karen)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueLanceDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueLanceDefeated,
+			Note:     "(experimental: cross Karen's opened north exit, defeat Champion Lance and verify his battle flag)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueHallOfFameEntered,
+			Note:     "(experimental: finish Lance's Oak/Mary scene and register the party in the Hall of Fame)",
 		}}
 	default:
 		return nil

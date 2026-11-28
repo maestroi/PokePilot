@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -366,8 +367,10 @@ type economyObjectiveProvider struct{}
 func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	out := append(repelUseObjectives(ctx.obs), fundingSaleObjectives(ctx.obs)...)
+	earn, blocked := incomeObjectives(ctx.obs, ctx.known, ctx.catalog.IncomeSources)
+	out = append(out, earn...)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
+		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...), Blocked: blocked}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -377,7 +380,7 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	economy := EconomyContext(obs)
 	if economy == nil {
-		return objectiveProviderResult{Candidates: out}
+		return objectiveProviderResult{Candidates: out, Blocked: blocked}
 	}
 	if cap(out)-len(out) < len(economy.Purchases) {
 		grown := make([]Objective, len(out), len(out)+len(economy.Purchases))
@@ -396,7 +399,7 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 			}
 		}
 	}
-	return objectiveProviderResult{Candidates: out}
+	return objectiveProviderResult{Candidates: out, Blocked: blocked}
 }
 
 const dexCaptureSupplyIntent = "dex-capture-supply"
@@ -545,25 +548,15 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 	if seekTrainingArea {
 		trainingChoice, hasTrainingChoice = bestKnownTrainingPlace(obs, known, placeNames, ctx.catalog)
 	}
+	shortfall := progressionFundingShortfall(obs)
+	funding, hasFunding := fundingTrainerPlace(ctx.catalog, placeNames, shortfall)
 	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
 		placeNames = selectJourneyPlaces(placeNames, known, ctx.hops, ctx.catalog)
 		if hasTrainingChoice {
-			wanted := string(trainingChoice.Area.Place)
-			found := false
-			for _, name := range placeNames {
-				if name == wanted {
-					found = true
-					break
-				}
-			}
-			if !found {
-				if len(placeNames) >= journeyPlaceLimit {
-					placeNames[len(placeNames)-1] = wanted
-				} else {
-					placeNames = append(placeNames, wanted)
-				}
-				sort.Strings(placeNames)
-			}
+			placeNames = keepJourneyPlace(placeNames, string(trainingChoice.Area.Place))
+		}
+		if hasFunding {
+			placeNames = keepJourneyPlace(placeNames, string(funding.Place))
 		}
 	}
 	out := make([]Objective, 0, 2*len(placeNames))
@@ -587,9 +580,49 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 			plain = appendObjectiveNote(plain, note)
 			flee = appendObjectiveNote(flee, note)
 		}
+		if hasFunding && destination.Place == funding.Place {
+			note := fmt.Sprintf("(funding: unbeaten trainers here pay ¥%d toward the ¥%d the run lacks for capture stock or a required payment)", funding.TrainerPrize, shortfall)
+			plain = appendObjectiveNote(plain, note)
+			flee = appendObjectiveNote(flee, note)
+		}
 		out = append(out, plain, flee)
 	}
 	return objectiveProviderResult{Candidates: out, Blocked: blocked}
+}
+
+// fundingTrainerPlace picks the offered destination whose unbeaten trainers
+// pay the most while the run is short of money it cannot otherwise raise.
+// run-d6dokr184ky81 sat at ¥42 with no balls and nothing sellable, and only
+// shuttled between towns because trainers are offered on the current map only.
+// ponytail: the prize counts trainers the arrival tile may not reach, so a
+// walled-off trainer can attract repeat trips; filter by arrival reachability
+// if that shows up in the farm.
+func fundingTrainerPlace(catalog ObjectiveCatalog, placeNames []string, shortfall uint32) (CatalogDestination, bool) {
+	var best CatalogDestination
+	if shortfall == 0 {
+		return best, false
+	}
+	for _, name := range placeNames {
+		if destination, ok := catalog.destination(PlaceID(name)); ok && destination.TrainerPrize > best.TrainerPrize {
+			best = destination
+		}
+	}
+	return best, best.TrainerPrize > 0
+}
+
+// keepJourneyPlace guarantees wanted survives journey trimming, replacing the
+// last trimmed entry when the list is already full.
+func keepJourneyPlace(placeNames []string, wanted string) []string {
+	if slices.Contains(placeNames, wanted) {
+		return placeNames
+	}
+	if len(placeNames) >= journeyPlaceLimit {
+		placeNames[len(placeNames)-1] = wanted
+	} else {
+		placeNames = append(placeNames, wanted)
+	}
+	sort.Strings(placeNames)
+	return placeNames
 }
 
 func deterministicProviderNames(providers []objectiveProvider) []string {

@@ -75,6 +75,43 @@ const (
 	// the flypoint is the cartridge's own proof that the badge gate and
 	// Victory Road were crossed on foot. It is not Elite Four progress.
 	ProgressIndigoPlateauReached game.ProgressID = "gs_indigo_plateau_reached"
+	// Will is proven only by the retail post-battle event, not by reaching his room.
+	ProgressLeagueWillDefeated  game.ProgressID = "gs_league_will_defeated"
+	ProgressLeagueKogaDefeated  game.ProgressID = "gs_league_koga_defeated"
+	ProgressLeagueBrunoDefeated game.ProgressID = "gs_league_bruno_defeated"
+	ProgressLeagueKarenDefeated game.ProgressID = "gs_league_karen_defeated"
+	// Lance's battle flag resets on a new Indigo challenge. The Hall of
+	// Fame event is a separate durable story fact set by its own ceremony.
+	ProgressLeagueLanceDefeated     game.ProgressID = "gs_league_lance_defeated"
+	ProgressLeagueHallOfFameEntered game.ProgressID = "gs_league_hall_of_fame"
+	// The ticket must actually be usable in the key-item pocket. Entering the
+	// ship does not prove arrival: only VermilionPortLeaveShipScript sets the
+	// first-landing event after a complete scripted voyage.
+	ProgressSSTicketReceived        game.ProgressID = "gs_ss_ticket_received"
+	ProgressKantoFirstLanding       game.ProgressID = "gs_kanto_first_landing"
+	ProgressKantoThunderBadgeEarned game.ProgressID = "gs_kanto_thunder_badge_earned"
+	ProgressKantoMarshBadgeEarned   game.ProgressID = "gs_kanto_marsh_badge_earned"
+	ProgressKantoRainbowBadgeEarned game.ProgressID = "gs_kanto_rainbow_badge_earned"
+	ProgressKantoSoulBadgeEarned    game.ProgressID = "gs_kanto_soul_badge_earned"
+	ProgressKantoCascadeBadgeEarned game.ProgressID = "gs_kanto_cascade_badge_earned"
+	ProgressKantoBoulderBadgeEarned game.ProgressID = "gs_kanto_boulder_badge_earned"
+	ProgressKantoVolcanoBadgeEarned game.ProgressID = "gs_kanto_volcano_badge_earned"
+	ProgressKantoEarthBadgeEarned   game.ProgressID = "gs_kanto_earth_badge_earned"
+	ProgressKantoAllBadgesEarned    game.ProgressID = "gs_kanto_all_badges_earned"
+	ProgressKantoManagerMet         game.ProgressID = "gs_kanto_power_plant_manager_met"
+	ProgressKantoRocketAtGym        game.ProgressID = "gs_kanto_cerulean_rocket_encountered"
+	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
+	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
+	ProgressKantoCopycatMet         game.ProgressID = "gs_kanto_copycat_lost_item_quest"
+	ProgressKantoLostDollReceived   game.ProgressID = "gs_kanto_lost_doll_received"
+	ProgressKantoRailPassReceived   game.ProgressID = "gs_kanto_rail_pass_received"
+	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
+	ProgressRadioCardReceived       game.ProgressID = "gs_radio_card_received"
+	ProgressKantoExpansionCard      game.ProgressID = "gs_kanto_expansion_card"
+	ProgressKantoSnorlaxCleared     game.ProgressID = "gs_kanto_snorlax_cleared"
+	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
+	ProgressMtSilverOpened          game.ProgressID = "gs_mt_silver_opened"
+	ProgressMtSilverRedDefeated     game.ProgressID = "gs_mt_silver_red_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -135,12 +172,44 @@ const (
 	eventRadioTowerSilverWingReceived uint16 = 121
 	// pret/pokegold event_flags.asm: Clair is defeated before the Fang
 	// scene, while the eighth badge is an independent engine flag.
-	eventBeatClair             uint16 = 1220
-	eventIcePathWaterfall      uint16 = 1672
-	eventDragonsDenDragonFang  uint16 = 1704
-	eventBlackthornGymBoulder1 uint16 = 1798
-	eventIcePathBoulder1       uint16 = 1801
-	eventIcePathFloorBoulder1  uint16 = 1805
+	eventBeatClair uint16 = 1220
+	// EVENT_BEAT_ELITE_4_WILL in the vendored retail event table.
+	eventBeatEliteFourWill  uint16 = 1464
+	eventBeatEliteFourKoga  uint16 = 1465
+	eventBeatEliteFourBruno uint16 = 1466
+	eventBeatEliteFourKaren uint16 = 1467
+	eventBeatChampionLance  uint16 = 1468
+	// EVENT_BEAT_ELITE_FOUR is set by the Hall of Fame scene, never by
+	// Lance's trainer-battle script.
+	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
+	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
+	eventBeatLtSurge uint16 = 1223
+	// Kanto power, Cerulean date and Blue recruitment are distinct from
+	// defeating the Gym Leaders (pokegold/constants/event_flags.asm).
+	eventKantoReturnedMachinePart uint16 = 201
+	eventKantoMetPowerManager     uint16 = 202
+	eventKantoMetRocketAtGym      uint16 = 203
+	eventKantoPowerRestored       uint16 = 205
+	// pret/pokegold Copycat and Vermilion Fan Club scripts. The Doll is
+	// consumed on return; its *receipt event* remains durable afterward.
+	eventKantoCopycatMet       uint16 = 207
+	eventKantoDollReturned     uint16 = 208
+	eventKantoRailPassReceived uint16 = 209
+	eventKantoLostDollReceived uint16 = 210
+	eventKantoFoundMachinePart uint16 = 251
+	eventKantoTrainersAtGym    uint16 = 1903
+	eventKantoBlueAtCinnabar   uint16 = 1909
+	eventKantoBlueAtViridian   uint16 = 1910
+	// EVENT_RED_IN_MT_SILVER is the visibility flag set by InitialEvents and
+	// by Red.disappear after a retail battle win; the Hall ceremony clears it.
+	eventMtSilverOpened         uint16 = 1871
+	eventMtSilverRedDisappeared uint16 = 1890
+	eventBeatEliteFour          uint16 = 68
+	eventIcePathWaterfall       uint16 = 1672
+	eventDragonsDenDragonFang   uint16 = 1704
+	eventBlackthornGymBoulder1  uint16 = 1798
+	eventIcePathBoulder1        uint16 = 1801
+	eventIcePathFloorBoulder1   uint16 = 1805
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
@@ -152,6 +221,14 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
+	kantoBadgeBoulderMask  = 1 << 0
+	kantoBadgeCascadeMask  = 1 << 1
+	kantoBadgeThunderMask  = 1 << 2
+	kantoBadgeRainbowMask  = 1 << 3
+	kantoBadgeSoulMask     = 1 << 4
+	kantoBadgeMarshMask    = 1 << 5
+	kantoBadgeVolcanoMask  = 1 << 6
+	kantoBadgeEarthMask    = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -264,6 +341,53 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressClairDefeated, Complete: hasGSEvent(reader, eventBeatClair)},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressIndigoPlateauReached, Complete: reader.Peek8(sym.VisitedSpawns+spawnIndigo/8)&(1<<(spawnIndigo%8)) != 0},
+		{ID: ProgressLeagueWillDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourWill)},
+		{ID: ProgressLeagueKogaDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKoga)},
+		{ID: ProgressLeagueBrunoDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourBruno)},
+		{ID: ProgressLeagueKarenDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKaren)},
+		{ID: ProgressLeagueLanceDefeated, Complete: hasGSEvent(reader, eventBeatChampionLance)},
+		{ID: ProgressLeagueHallOfFameEntered, Complete: hasGSEvent(reader, eventBeatEliteFour)},
+		// EVENT_BEAT_ELITE_FOUR is set during the Hall of Fame ceremony,
+		// not when Lance is beaten. Publish the portable full-campaign fact
+		// alongside the Gen2-specific milestone for the shared elite-four goal.
+		{ID: game.ProgressMainStoryComplete, Complete: hasGSEvent(reader, eventBeatEliteFour)},
+		{ID: ProgressSSTicketReceived, Complete: gsOwnsKeyItem(reader, gsSSTicket)},
+		{ID: ProgressKantoFirstLanding, Complete: hasGSEvent(reader, gsEventFirstShipTrip)},
+		{ID: ProgressKantoThunderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeThunderMask != 0},
+		{ID: ProgressKantoMarshBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeMarshMask != 0},
+		{ID: ProgressKantoRainbowBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeRainbowMask != 0},
+		{ID: ProgressKantoSoulBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeSoulMask != 0},
+		{ID: ProgressKantoCascadeBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeCascadeMask != 0},
+		{ID: ProgressKantoBoulderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeBoulderMask != 0},
+		{ID: ProgressKantoVolcanoBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeVolcanoMask != 0},
+		{ID: ProgressKantoEarthBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeEarthMask != 0},
+		// All eight Kanto badges are a separate stopping goal, not a claim
+		// that one particular Gym Leader was fought in a fixed order.
+		{ID: ProgressKantoAllBadgesEarned, Complete: reader.Peek8(sym.KantoBadges) == 0xff},
+		{ID: ProgressKantoManagerMet, Complete: hasGSEvent(reader, eventKantoMetPowerManager)},
+		{ID: ProgressKantoRocketAtGym, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym)},
+		{ID: ProgressKantoMachinePartFound, Complete: hasGSEvent(reader, eventKantoFoundMachinePart)},
+		{ID: ProgressKantoPowerRestored, Complete: hasGSEvent(reader, eventKantoReturnedMachinePart) && hasGSEvent(reader, eventKantoPowerRestored)},
+		{ID: ProgressKantoCopycatMet, Complete: hasGSEvent(reader, eventKantoCopycatMet)},
+		{ID: ProgressKantoLostDollReceived, Complete: hasGSEvent(reader, eventKantoLostDollReceived)},
+		// A visit or gift dialogue never proves the rail Pass. Both the
+		// retail event and real key-item pocket entry must agree.
+		{ID: ProgressKantoRailPassReceived, Complete: hasGSEvent(reader, eventKantoRailPassReceived) && gsOwnsKeyItem(reader, gsRailPass)},
+		// The Route 25 script removes Misty from her date and clears the
+		// Cerulean Gym sprite visibility event; power restoration alone
+		// must not manufacture her return.
+		{ID: ProgressKantoMistyReturned, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym) && !hasGSEvent(reader, eventKantoTrainersAtGym)},
+		{ID: ProgressRadioCardReceived, Complete: reader.Peek8(sym.PokegearFlags)&gsPokegearRadioCardMask != 0},
+		{ID: ProgressKantoExpansionCard, Complete: reader.Peek8(sym.PokegearFlags)&gsPokegearExpansionCardMask != 0},
+		{ID: ProgressKantoSnorlaxCleared, Complete: hasGSEvent(reader, gsEventFoughtSnorlax)},
+		// Blue must have vanished from Cinnabar and become visible at
+		// Viridian, not merely be absent from an unrelated map.
+		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
+		{ID: ProgressMtSilverOpened, Complete: hasGSEvent(reader, eventMtSilverOpened)},
+		// InitialEvents also sets the Red flag (hidden until the Hall of
+		// Fame clears it); only after Oak opens Mt. Silver does it mean
+		// Red.disappear ran after a win.
+		{ID: ProgressMtSilverRedDefeated, Complete: hasGSEvent(reader, eventMtSilverOpened) && hasGSEvent(reader, eventMtSilverRedDisappeared)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

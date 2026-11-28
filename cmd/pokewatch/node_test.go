@@ -21,7 +21,12 @@ func TestFixerSummaryCountsPaidFreeAndBlocked(t *testing.T) {
 		ts(40*time.Minute) + "\tk1\tcursor\tstarted",
 		ts(30*time.Minute) + "\tk2\tcursor\tstarted",
 		ts(20*time.Minute) + "\tk2\tcursor\tpr",
-		ts(30*time.Hour) + "\tk3\tcursor\tstarted", // outside 24h
+		ts(30*time.Hour) + "\tk3\tcursor\tstarted",  // outside 24h
+		ts(2*time.Hour) + "\tk4\tcursor\tparked\t3", // verdict, not work
+		ts(8*24*time.Hour) + "\tk5\topencode\tstarted",
+		ts(8*24*time.Hour) + "\tk5\topencode\tstarted",
+		ts(8*24*time.Hour) + "\tk5\tcursor\tstarted",
+		ts(8*24*time.Hour) + "\tk5\tcursor\tstarted", // spent but stale
 	}, "\n")
 	rows := deploy.ReadLedger(strings.NewReader(ledger))
 	tiers, _ := deploy.ParseLadder("opencode:2,cursor:2")
@@ -30,7 +35,7 @@ func TestFixerSummaryCountsPaidFreeAndBlocked(t *testing.T) {
 		t.Fatalf("counts: %+v", got)
 	}
 	if len(got.BlockedKeys) != 1 || got.BlockedKeys[0] != "k1" {
-		t.Fatalf("k1 spent every tier; blocked = %v", got.BlockedKeys)
+		t.Fatalf("only k1 is freshly spent; blocked = %v", got.BlockedKeys)
 	}
 }
 

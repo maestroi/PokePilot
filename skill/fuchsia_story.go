@@ -56,9 +56,9 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !FuchsiaProgressionReady(&mem) {
 		return fmt.Errorf("skill: FuchsiaProgression: POKE FLUTE is required")
 	}
-	if !FuchsiaProgressionAvailable(mem.U8(sym.CurMap)) {
-		return fmt.Errorf("skill: FuchsiaProgression: map %#04x is outside the supported Lavender/Fuchsia slice", mem.U8(sym.CurMap))
-	}
+	// No start-map gate: every phase below begins with a world-graph Travel,
+	// which owns reachability. FuchsiaProgressionAvailable stays an offer
+	// hint for the planner, not a veto here (Yellow resumed on Route 24).
 
 	if !state.HasEvent(&mem, eventBeatRoute12Snorlax) {
 		if err := clearRoute12Snorlax(m, romData, policy); err != nil {

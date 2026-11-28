@@ -116,19 +116,27 @@ func (p *redWorldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.Trav
 	}
 	markGen1Cuttable(&spec, h.Tileset)
 	if mode == worldmodel.TraversalWater {
-		enableGen1SurfWater(&spec)
+		enableGen1SurfWater(&spec, h.Tileset)
 	}
 	return spec, nil
 }
 
-func enableGen1SurfWater(spec *worldmodel.GridSpec) {
+// enableGen1SurfWater mirrors pokered CollisionCheckOnWater: a surfer keeps
+// surfing onto water ($14), the eastern-coastline tile ($32, except in the
+// SHIP_PORT tileset where it is the S.S. Anne gangway) and the Safari-coast
+// tile ($48). Route 20's western sea reaches the Seafoam island shore only
+// across $32 coastline tiles.
+func enableGen1SurfWater(spec *worldmodel.GridSpec, tileset uint8) {
 	if spec == nil {
 		return
 	}
-	const surfWaterTile uint8 = 0x14
+	const shipPortTileset uint8 = 0x0e
+	surfable := func(t uint8) bool {
+		return t == 0x14 || t == 0x48 || (t == 0x32 && tileset != shipPortTileset)
+	}
 	for i := range spec.Walkable {
-		if (i < len(spec.FieldTile) && spec.FieldTile[i] == surfWaterTile) ||
-			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == surfWaterTile) {
+		if (i < len(spec.FieldTile) && spec.FieldTile[i] == 0x14) ||
+			(i < len(spec.CollisionTile) && surfable(spec.CollisionTile[i])) {
 			spec.Walkable[i] = true
 		}
 	}

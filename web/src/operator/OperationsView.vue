@@ -1,27 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
-import { forceEndWorker, getDashboard } from '../shared/api/client'
-import type { DashboardWorker } from '../shared/api/types'
+import { forceEndWorker } from '../shared/api/client'
+import type { DashboardSnapshot, DashboardWorker } from '../shared/api/types'
 import ActionMenu, { type ActionMenuItem } from '../shared/components/ActionMenu.vue'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
-import { usePollingResource } from '../shared/composables/usePollingResource'
+import type { PollingResource } from '../shared/composables/usePollingResource'
 import { presentRunStatus, presentWorker } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 import { ageLabel, gameTitle, partitionOperationRuns, shortRevision } from './operations'
 import { middleTruncate } from './runs'
 
+// The shell's active dashboard supplies workers and runs at the same cadence
+// as this page, avoiding a duplicate request.
+const props = defineProps<{ activeResource: PollingResource<DashboardSnapshot> }>()
 const {
   data: activeData,
   error: activeError,
   state: activeState,
   retry: retryActive
-} = usePollingResource(
-  (signal) => getDashboard({ active: true }, signal),
-  { intervalMs: 2000 }
-)
+} = props.activeResource
 
 const loaded = computed(() => activeState.value !== 'loading' && activeState.value !== 'error')
 const workers = computed(() => [...(activeData.value?.workers ?? [])]

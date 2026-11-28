@@ -88,9 +88,9 @@ func TestDecodeStoryFactsLeftLeagueVoidsRoomProgress(t *testing.T) {
 	setTestEvent(&mem, eventAutowalkedIntoLoreleisRoom)
 	setTestEvent(&mem, eventBeatLorelei)
 	setTestEvent(&mem, eventBeatLance)
-	mem[elite4FlagsAddr] |= elite4StartedMask
+	mem[elite4FlagsAddr] |= 1 << 1 // BIT_STARTED_ELITE_4
 
-	mem[sym.CurMap] = lancesRoomMap
+	mem[sym.CurMap] = 0x71 // LANCES_ROOM
 	if got := DecodeStoryFacts(&mem, InventoryState{}); !got.LeagueChallengeStarted || !got.LeagueLanceDefeated {
 		t.Fatalf("progress inside the gauntlet must hold: %+v", got)
 	}
@@ -145,4 +145,29 @@ func TestStoryEventIndicesMatchDecomp(t *testing.T) {
 func setTestEvent(mem *Mem, event Event) {
 	addr := sym.EventFlags + uint16(event)/8
 	mem[addr] |= 1 << (uint16(event) % 8)
+}
+
+// A League rematch runs on a save whose Hall-of-Fame bit already folds every
+// stage to true; the attempt view must report the current gauntlet instead.
+func TestDecodeLeagueAttemptFactsIgnoresHallOfFameBit(t *testing.T) {
+	var mem Mem
+	mem[elite4FlagsAddr] |= elite4CompletedMask | 1<<1 // BIT_STARTED_ELITE_4
+	mem[sym.CurMap] = 0xF6                             // BRUNOS_ROOM
+	setTestEvent(&mem, eventAutowalkedIntoLoreleisRoom)
+	setTestEvent(&mem, eventBeatLorelei)
+
+	got := DecodeLeagueAttemptFacts(&mem, InventoryState{})
+	if got.MainStoryComplete || !got.LeagueChallengeStarted || !got.LeagueLoreleiDefeated ||
+		got.LeagueBrunoDefeated || got.LeagueChampionDefeated {
+		t.Fatalf("attempt facts = %+v, want Lorelei beaten and Bruno next", got)
+	}
+	if story := DecodeStoryFacts(&mem, InventoryState{}); !story.MainStoryComplete || !story.LeagueChampionDefeated {
+		t.Fatalf("story facts must keep the folded completion: %+v", story)
+	}
+
+	// A rematch blackout leaves the gauntlet: the lobby will erase it.
+	mem[sym.CurMap] = 0x07
+	if got := DecodeLeagueAttemptFacts(&mem, InventoryState{}); got.LeagueChallengeStarted || got.LeagueLoreleiDefeated {
+		t.Fatalf("abandoned rematch facts = %+v, want a fresh gauntlet", got)
+	}
 }

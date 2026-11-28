@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import { ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
 import { getDashboard } from '../shared/api/client'
 import { getBroadcastControl, getBroadcastStatus } from '../shared/api/broadcast'
@@ -7,14 +7,17 @@ import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { isBroadcastOnAir, presentBroadcast } from '../shared/status'
 import { operatorHref, spectatorURL } from '../shared/urls'
-import MediaBroadcasts from './MediaBroadcasts.vue'
-import MediaJobs from './MediaJobs.vue'
-import MediaLibrary from './MediaLibrary.vue'
-import MediaStudio from './MediaStudio.vue'
-import MediaFullE2E from './MediaFullE2E.vue'
+
 import { MEDIA_TABS, elapsedLabel, formatMediaHref, parseMediaState, tabHref, type BroadcastRow, type MediaState } from './mediaQuery'
 import { middleTruncate } from './runs'
 import { gameTitle } from './operations'
+
+// Load each media tab only when it is opened.
+const MediaBroadcasts = defineAsyncComponent(() => import('./MediaBroadcasts.vue'))
+const MediaJobs = defineAsyncComponent(() => import('./MediaJobs.vue'))
+const MediaLibrary = defineAsyncComponent(() => import('./MediaLibrary.vue'))
+const MediaStudio = defineAsyncComponent(() => import('./MediaStudio.vue'))
+const MediaFullE2E = defineAsyncComponent(() => import('./MediaFullE2E.vue'))
 
 const props = defineProps<{ publicBase?: string }>()
 

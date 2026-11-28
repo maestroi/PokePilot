@@ -94,15 +94,29 @@ func chooseSacrificialBenchHealWithStrategyContext(
 	found := false
 
 	for slot, mon := range resources.Party {
-		if slot == activeSlot || mon.Fainted() || mon.MaxHP == 0 || !criticallyWeak(mon) {
+		if slot == activeSlot || mon.MaxHP == 0 || !criticallyWeak(mon) {
 			continue
 		}
 
-		item, ok := chooseHPMedicineState(resources, int(mon.MaxHP-mon.HP))
+		// A fainted carry (Meganium one-shot by Red's Charizard) is the
+		// strongest case for spending the sacrificial turn: revive it.
+		var item uint8
+		var ok bool
+		if mon.Fainted() {
+			// Only a carry is worth a revive: matchup scores ignore level,
+			// and an underleveled mon revived into a strong foe (an L17
+			// Miltank against Red's L77 Charizard) only wastes the item.
+			if int(mon.Level) < int(b.EnemyLevel) {
+				continue
+			}
+			item, ok = chooseReviveState(resources)
+		} else {
+			item, ok = chooseHPMedicineState(resources, int(mon.MaxHP-mon.HP))
+		}
 		if !ok {
 			continue
 		}
-		projected := projectBattleHPMedicine(mon, item)
+		projected := projectBattleHPMedicine(resources, mon, item)
 		// Do not spend a sacrificial turn on a heal too small to make the carry
 		// a viable switch-in afterward.
 		if projected.HP <= mon.HP || criticallyWeak(projected) {
@@ -138,20 +152,32 @@ func chooseSacrificialBenchHealWithStrategyContext(
 	return best, found
 }
 
-func projectBattleHPMedicine(mon game.BattlePartyMon, item uint8) game.BattlePartyMon {
-	for _, med := range hpMedicines {
-		if med.item != item {
-			continue
-		}
-		hp := int(mon.HP) + med.heal
-		if hp > int(mon.MaxHP) {
-			hp = int(mon.MaxHP)
-		}
-		mon.HP = uint16(hp)
-		break
+func projectBattleHPMedicine(resources game.BattleResourcesState, mon game.BattlePartyMon, item uint8) game.BattlePartyMon {
+	med, ok := resources.Medicine(uint16(item))
+	if !ok {
+		return mon
 	}
-	if item == itemFullRestore {
+	if mon.Fainted() {
+		if med.RevivePercent <= 0 {
+			return mon
+		}
+		mon.HP = uint16(max(1, int(mon.MaxHP)*med.RevivePercent/100))
+		return mon
+	}
+	mon.HP = uint16(min(int(mon.HP)+med.HP, int(mon.MaxHP)))
+	if med.CuresStatus(mon.Status) {
 		mon.Status = ""
 	}
 	return mon
+}
+
+// chooseReviveState returns the owned revive that restores the most HP.
+func chooseReviveState(resources game.BattleResourcesState) (uint8, bool) {
+	best, bestPercent := uint8(0), 0
+	for _, med := range resources.Medicines {
+		if med.RevivePercent > bestPercent && resourceBagHas(resources, med) {
+			best, bestPercent = uint8(med.NativeItemID), med.RevivePercent
+		}
+	}
+	return best, bestPercent > 0
 }

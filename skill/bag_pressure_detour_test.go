@@ -37,3 +37,31 @@ func TestBagMaintenanceTriesLocalCandyBeforeDetourAndSurfacesStranding(t *testin
 		t.Fatal("runInventoryDetour's joined error must still identify stranding")
 	}
 }
+
+// Farm #2873: Safari Zone blocks the Player PC detour, every bag TM is
+// incompatible with the party, and the consumable toss whitelist is empty.
+// An unteachable TM must still be discarded in place before teaching or the
+// whitelist reports ErrNoSafeBagSpace.
+func TestBagMaintenanceTossesUnteachableTMBeforeTeachingOrWhitelist(t *testing.T) {
+	srcBytes, err := os.ReadFile("bag_pressure.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(srcBytes)
+	start := strings.Index(src, "func ensureBagFreeSlotsManaged")
+	if start < 0 {
+		t.Fatal("ensureBagFreeSlotsManaged not found")
+	}
+	body := src[start:]
+	storeTM := strings.Index(body, "storeTMForBagSpace(")
+	tossUnteachable := strings.Index(body, "tossUnteachableTMForBagSpace(")
+	teach := strings.Index(body, "teachTMForBagSpace(")
+	whitelist := strings.Index(body, "EnsureBagFreeSlots(")
+	if storeTM < 0 || tossUnteachable < 0 || teach < 0 || whitelist < 0 {
+		t.Fatal("bag-pressure ladder missing store-TM, toss-unteachable, teach, or whitelist step")
+	}
+	if !(storeTM < tossUnteachable && tossUnteachable < teach && teach < whitelist) {
+		t.Fatalf("order store-TM=%d toss-unteachable=%d teach=%d whitelist=%d; want store < toss-unteachable < teach < whitelist",
+			storeTM, tossUnteachable, teach, whitelist)
+	}
+}

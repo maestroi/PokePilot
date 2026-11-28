@@ -55,3 +55,24 @@ func TestVermilionGymSecondLockIsAuthoritative(t *testing.T) {
 		t.Fatalf("second-lock-only phase=%d, want gate open", got)
 	}
 }
+
+func TestVermilionSecondSwitchUsesFirstAcceptedCandidate(t *testing.T) {
+	for _, tc := range []struct {
+		primary, alternate, want uint8
+		ok                       bool
+	}{
+		{3, 0, 3, true},        // Red: primary always valid, padding ignored
+		{255, 9, 9, true},      // Yellow -1 padded primary
+		{3, 255, 3, true},      // Yellow -1 padded alternate
+		{255, 255, 0, false},   // no reachable second lock: reroll
+		{0x40, 0x7a, 0, false}, // Yellow out-of-range 3-candidate sample
+	} {
+		got, ok := vermilionSecondSwitch(tc.primary, tc.alternate)
+		if got != tc.want || ok != tc.ok {
+			t.Fatalf("vermilionSecondSwitch(%d,%d) = %d,%v want %d,%v", tc.primary, tc.alternate, got, ok, tc.want, tc.ok)
+		}
+	}
+	if can := vermilionRerollCan(0, 1); can != 2 {
+		t.Fatalf("vermilionRerollCan(0,1) = %d, want 2", can)
+	}
+}

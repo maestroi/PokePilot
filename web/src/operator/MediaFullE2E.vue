@@ -13,7 +13,13 @@ const props = defineProps<{ state: MediaState }>()
 const inspectedID = ref(props.state.run || fullE2E.runID)
 const mode = ref<'new' | 'existing'>(props.state.run ? 'existing' : 'new')
 const existingID = ref(props.state.run)
+const game = ref<'pokemon-red' | 'pokemon-gold' | 'pokemon-silver'>('pokemon-red')
 const starter = ref('squirtle')
+const starterOptions = computed(() => game.value === 'pokemon-red'
+  ? ['squirtle', 'bulbasaur', 'charmander']
+  : ['cyndaquil', 'totodile', 'chikorita'])
+watch(game, () => { starter.value = starterOptions.value[0] })
+const gameLabel = computed(() => ({ 'pokemon-red': 'Pokémon Red', 'pokemon-gold': 'Pokémon Gold', 'pokemon-silver': 'Pokémon Silver' })[game.value])
 const deployment = ref('')
 const seed = ref(1)
 const uploadPrivate = ref(fullE2E.uploadPrivate)
@@ -173,6 +179,7 @@ async function start(): Promise<void> {
   await beginFullE2E({
     runID: id,
     fresh: mode.value === 'new',
+    game: game.value,
     starter: starter.value,
     seed: seed.value,
     deployment: deployment.value,
@@ -201,11 +208,11 @@ function downloadReport(): void {
     <section class="ui-bay self-start" aria-labelledby="full-e2e-title">
       <div class="ui-bay-header">
         <h2 id="full-e2e-title">Full production test</h2>
-        <span class="text-meta text-fg-2">Pokémon Red</span>
+        <span class="text-meta text-fg-2">{{ gameLabel }}</span>
       </div>
       <div class="space-y-4 p-3">
         <p class="text-meta text-fg-2">
-          Play through the Champion and verified Hall of Fame, render an episode and a portrait Short, then prepare private YouTube publication candidates. No videos upload unless explicitly enabled below.
+          Play the whole game (Red: Champion and Hall of Fame; Gold/Silver: 16 badges and Red on Mt. Silver), render an episode and a portrait Short, then prepare private YouTube publication candidates. No videos upload unless explicitly enabled below.
         </p>
         <fieldset :disabled="working" class="space-y-3">
           <legend class="text-meta font-semibold">Source</legend>
@@ -214,6 +221,14 @@ function downloadReport(): void {
             <label class="flex items-center gap-2 text-sm"><input v-model="mode" type="radio" value="existing" /> Existing run</label>
           </div>
           <template v-if="mode === 'new'">
+            <label class="block space-y-1 text-meta" for="e2e-game">
+              <span>Game</span>
+              <select id="e2e-game" v-model="game" class="ui-input h-10 w-full">
+                <option value="pokemon-red">Pokémon Red</option>
+                <option value="pokemon-gold">Pokémon Gold · experimental</option>
+                <option value="pokemon-silver">Pokémon Silver · experimental</option>
+              </select>
+            </label>
             <label class="block space-y-1 text-meta" for="e2e-model">
               <span>Strategist deployment</span>
               <select id="e2e-model" v-model="deployment" class="ui-input h-10 w-full">
@@ -225,9 +240,7 @@ function downloadReport(): void {
               <label class="space-y-1 text-meta" for="e2e-starter">
                 <span>Starter</span>
                 <select id="e2e-starter" v-model="starter" class="ui-input h-10 w-full">
-                  <option value="squirtle">Squirtle</option>
-                  <option value="bulbasaur">Bulbasaur</option>
-                  <option value="charmander">Charmander</option>
+                  <option v-for="name in starterOptions" :key="name" :value="name">{{ name[0].toUpperCase() + name.slice(1) }}</option>
                 </select>
               </label>
               <label class="space-y-1 text-meta" for="e2e-seed">
@@ -237,11 +250,11 @@ function downloadReport(): void {
             </div>
           </template>
           <label v-else class="block space-y-1 text-meta" for="e2e-run">
-            <span>Existing Red full-campaign run</span>
+            <span>Existing full-campaign run</span>
             <input id="e2e-run" v-model="existingID" class="ui-input h-10 w-full font-mono" list="e2e-recent-runs" placeholder="run-..." autocomplete="off" />
             <button type="button" class="ui-btn ui-btn-sm mt-2" :disabled="!/^[-_a-zA-Z0-9]{3,100}$/.test(existingID.trim())" @click="inspectRun(existingID.trim())">Inspect this run · no production actions</button>
             <datalist id="e2e-recent-runs">
-              <option v-for="run in (recent.data.value?.runs || []).filter(r => r.game === 'pokemon-red')" :key="run.run_id" :value="run.run_id">{{ run.goal || 'No goal' }}</option>
+              <option v-for="run in (recent.data.value?.runs || []).filter(isFullCampaignSource)" :key="run.run_id" :value="run.run_id">{{ run.goal || 'No goal' }}</option>
             </datalist>
           </label>
         </fieldset>

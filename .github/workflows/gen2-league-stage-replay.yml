@@ -1,0 +1,144 @@
+name: Gen2 League ROM Stage Replay
+
+# Replay just one retail Gold/Silver League leg from the exact stage's
+# previously captured checkpoint. No private ROM, checkpoint or save file
+# may appear in public Actions artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: Retail cartridge to replay
+        required: true
+        default: gold
+        type: choice
+        options:
+          - gold
+          - silver
+          - both
+      stage:
+        description: Next League objective to replay from its preceding checkpoint
+        required: true
+        default: will
+        type: choice
+        options:
+          - indigo
+          - will
+          - koga
+          - bruno
+          - karen
+          - hall-of-fame
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gen2-league-stage-replay
+  cancel-in-progress: false
+
+jobs:
+  league-stage:
+    name: Replay Gold/Silver League objective
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 180
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve private corpus and output directory
+        shell: bash
+        env:
+          CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+        run: |
+          set -euo pipefail
+          echo "POKEPILOT_LEAGUE_CORPUS=${CONFIGURED_CORPUS:-/var/lib/pokepilot/qualification}" >> "$GITHUB_ENV"
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
+          out="$results/gen2-league-stage/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out"
+          echo "POKEPILOT_LEAGUE_RESULTS=$out" >> "$GITHUB_ENV"
+
+      - name: Replay one authenticated stage
+        shell: bash
+        env:
+          INPUT_GAME: ${{ inputs.game }}
+          INPUT_STAGE: ${{ inputs.stage }}
+          CONFIGURED_GOLD_ROM: ${{ vars.POKEMON_GOLD_ROM_PATH }}
+          CONFIGURED_SILVER_ROM: ${{ vars.POKEMON_SILVER_ROM_PATH }}
+        run: |
+          set -euo pipefail
+          case "$INPUT_STAGE" in
+            indigo) source=post-rising ;;
+            will) source=post-indigo ;;
+            koga) source=post-will ;;
+            bruno) source=post-koga ;;
+            karen) source=post-bruno ;;
+            hall-of-fame) source=post-karen ;;
+            *) echo "::error::Unknown stage"; exit 2 ;;
+          esac
+          games=("$INPUT_GAME")
+          if [[ "$INPUT_GAME" == "both" ]]; then
+            games=(gold silver)
+          fi
+          for game in "${games[@]}"; do
+            case "$game" in
+              gold) rom="${CONFIGURED_GOLD_ROM:-$HOME/.config/pokepilot/pokemon_gold.gbc}" ;;
+              silver) rom="${CONFIGURED_SILVER_ROM:-$HOME/.config/pokepilot/pokemon_silver.gbc}" ;;
+              *) echo "::error::Unknown cartridge"; exit 2 ;;
+            esac
+            checkpoint="$POKEPILOT_LEAGUE_CORPUS/gs-league/$game/$source/start.state"
+            provenance="${checkpoint%/*}/source.json"
+            if [[ ! -f "$rom" || ! -s "$checkpoint" || ! -s "$provenance" ]]; then
+              echo "::error::Missing private $game ROM or authenticated $source checkpoint/provenance"
+              echo "### $game / $INPUT_STAGE BLOCKED: authentic fixture missing" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            out="$POKEPILOT_LEAGUE_RESULTS/$game/$INPUT_STAGE"
+            mkdir -p "$out"
+            export POKEPILOT_GS_LEAGUE_REPLAY=1
+            export POKEPILOT_GS_LEAGUE_GAME="$game"
+            export POKEPILOT_GS_LEAGUE_STAGE="$INPUT_STAGE"
+            export POKEPILOT_GS_LEAGUE_ROM="$rom"
+            export POKEPILOT_GS_LEAGUE_START="$checkpoint"
+            export POKEPILOT_GS_LEAGUE_OUT="$out"
+            # The test checks ROM size and SHA-1, source.json objective and
+            # state SHA-256, live native map and predecessor victory flag
+            # before allowing any gameplay input.
+            go test -count=1 -timeout=100m ./agent \
+              -run '^TestGSLeagueROMCheckpointReplay$' -v \
+              2>&1 | tee "$out/run.log"
+            echo "PASS $game / $INPUT_STAGE: genuine checkpoint stage replay" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Prepare safe diagnostic artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-gen2-league-stage-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ -d "${POKEPILOT_LEAGUE_RESULTS:-}" ]]; then
+            cd "$POKEPILOT_LEAGUE_RESULTS"
+            while IFS= read -r -d '' file; do
+              mkdir -p "$safe/$(dirname "$file")"
+              cp "$file" "$safe/$file"
+            done < <(find . -type f ! -name '*.state' ! -name '*.sav' \
+              ! -name '*.gb' ! -name '*.gbc' ! -name 'source.json' -print0)
+          fi
+          echo "POKEPILOT_LEAGUE_SAFE=$safe" >> "$GITHUB_ENV"
+          echo "ROM and save-state bytes remain on the private runner; only text/JSON diagnostics are uploaded." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload safe stage diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gen2-league-stage-diagnostics
+          path: ${{ env.POKEPILOT_LEAGUE_SAFE }}
+          retention-days: 14
+          if-no-files-found: warn

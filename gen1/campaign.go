@@ -96,3 +96,20 @@ func FirstIncomplete(state game.ProgressState, stages []game.ProgressID) (game.P
 	}
 	return "", false
 }
+
+// LeagueRunAbandoned reports whether an unfinished Elite Four gauntlet was
+// left (blackout or escape) while its room events are still set. Every Gen I
+// Indigo lobby script clears BIT_STARTED_ELITE_4 (bit 1 of wElite4Flags) and
+// resets the Indigo event range on entry, so the gauntlet restarts from
+// Lorelei and none of its room facts may be offered. mapID is wCurMap; the
+// gauntlet map ids are shared by every Gen I cartridge's map_constants.asm.
+func LeagueRunAbandoned(elite4Flags, mapID uint8) bool {
+	if elite4Flags&(1<<1) == 0 {
+		return false
+	}
+	switch mapID {
+	case 0x71, 0x76, 0x78, 0xF5, 0xF6, 0xF7: // LANCES_ROOM, HALL_OF_FAME, CHAMPIONS_ROOM, LORELEIS/BRUNOS/AGATHAS_ROOM
+		return false
+	}
+	return true
+}
