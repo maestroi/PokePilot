@@ -444,6 +444,19 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
 	}, control.recordSolverAttempt)
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_clone_run",
+		Description: "Queue a fresh run with another run's exact spec (game, seed, goal, play style, risk, deployment, budgets). Use it to rerun a failure from the start after a fix ships. Endless runs cannot be cloned through MCP.",
+	}, control.cloneRun)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_queue_repro",
+		Description: "Queue a finite verification run that resumes an llm run from one of its checkpoints (default: the latest attempt's latest replayable checkpoint). Use it to check a fix against the exact failing state.",
+	}, control.queueRepro)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_flag_stuck",
+		Description: "Stop an active run as stuck with an operator note. The run settles with the ordinary stuck outcome, so the failure reaches triage like a stagnation-watchdog stop. Use pokepilot_cancel_run instead when the run is not actually stuck.",
+	}, control.flagStuck)
+
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{

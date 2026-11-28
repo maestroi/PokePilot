@@ -208,6 +208,8 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	sort.Strings(names)
 	want := []string{
 		"pokepilot_cancel_run",
+		"pokepilot_clone_run",
+		"pokepilot_flag_stuck",
 		"pokepilot_get_run",
 		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
@@ -219,6 +221,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_list_checkpoints",
 		"pokepilot_list_runs",
 		"pokepilot_prepare_debug",
+		"pokepilot_queue_repro",
 		"pokepilot_record_solver_attempt",
 		"pokepilot_start_run",
 	}
